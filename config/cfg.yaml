@@ -1,0 +1,37 @@
+
+
+# domain
+douyin:
+  headers:
+    accept_language: zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+    user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36
+    referer: https://www.douyin.com/
+    cookies: __ac_nonce=067d687ac00d70af16eab; __ac_signature=_02B4Z6wo00f018O6kmgAAIDAR1H8JrcivBPDi5bAAJdBcf; ttwid=1%7C46sVJ6G5zO0ZRKBqbFef2B13U3CqP9gLwQEH8IV2y6A%7C1742112685%7Cae649397cca7dde21884d5f8e3e3d53eb2361aa64af04cd6889fa71d7f23344b; UIFID_TEMP=986fab8dfc2c74111fac2b883dbdee67777473ded35e2c4bebbf68cc8b91739da61f6b365ad9795b0aa3a8bddce6cc3e39c5d4fd4bad667aaefd3d3ec08baac66fe3b215343f12d8aae84e0a24048f44; douyin.com; device_web_cpu_core=16; device_web_memory_size=-1; architecture=amd64; hevc_supported=true; IsDouyinActive=true; home_can_add_dy_2_desktop=%220%22; dy_swidth=1835; dy_sheight=1147; stream_recommend_feed_params=%22%7B%5C%22cookie_enabled%5C%22%3Atrue%2C%5C%22screen_width%5C%22%3A1835%2C%5C%22screen_height%5C%22%3A1147%2C%5C%22browser_online%5C%22%3Atrue%2C%5C%22cpu_core_num%5C%22%3A16%2C%5C%22device_memory%5C%22%3A0%2C%5C%22downlink%5C%22%3A%5C%22%5C%22%2C%5C%22effective_type%5C%22%3A%5C%22%5C%22%2C%5C%22round_trip_time%5C%22%3A0%7D%22; strategyABtestKey=%221742112685.842%22; volume_info=%7B%22isUserMute%22%3Afalse%2C%22isMute%22%3Afalse%2C%22volume%22%3A0.5%7D; stream_player_status_params=%22%7B%5C%22is_auto_play%5C%22%3A0%2C%5C%22is_full_screen%5C%22%3A0%2C%5C%22is_full_webscreen%5C%22%3A0%2C%5C%22is_mute%5C%22%3A0%2C%5C%22is_speed%5C%22%3A1%2C%5C%22is_visible%5C%22%3A1%7D%22; xgplayer_user_id=835787001711; fpk1=U2FsdGVkX19Ke0llbjXpGOOr1Jeel/2GnaSJz41VO3mAFs271jC0hG7gdWlk+2pYLM4GF8TVGtwClCJIXsTKUw==; fpk2=2333b8d335abc6e14aef1caed0ae26fc; s_v_web_id=verify_m8bcww86_XfwSCnmj_5i3F_4Joq_8edO_9gRH9JENh07f; csrf_session_id=6f34e666e71445c9d39d8d06a347a13f; FORCE_LOGIN=%7B%22videoConsumedRemainSeconds%22%3A180%7D; biz_trace_id=c34e5eaf; passport_csrf_token=ab84b3e39ad78e719b236035a27379c0; passport_csrf_token_default=ab84b3e39ad78e719b236035a27379c0; __security_mc_1_s_sdk_crypt_sdk=ac2d56c3-44cd-a161; __security_mc_1_s_sdk_cert_key=ccf2bd2d-4718-b8de; __security_mc_1_s_sdk_sign_data_key_web_protect=9995d368-4e45-b17f; bd_ticket_guard_client_data=eyJiZC10aWNrZXQtZ3VhcmQtdmVyc2lvbiI6MiwiYmQtdGlja2V0LWd1YXJkLWl0ZXJhdGlvbi12ZXJzaW9uIjoxLCJiZC10aWNrZXQtZ3VhcmQtcmVlLXB1YmxpYy1rZXkiOiJCUHR2ZDlUeGU4UlhPaWdIczFqaStJWityQlF4UWZMKytiL2drbXlYUmNrelNua1lQUjJTRVZHVlo4MWFCU0EvSW4xSnBmbzN3TFlvSnhIZTZTV29DTmc9IiwiYmQtdGlja2V0LWd1YXJkLXdlYi12ZXJzaW9uIjoyfQ%3D%3D; bd_ticket_guard_client_web_domain=2; xg_device_score=8.208487995540095; sdk_source_info=7e276470716a68645a606960273f276364697660272927676c715a6d6069756077273f276364697660272927666d776a68605a607d71606b766c6a6b5a7666776c7571273f275e58272927666a6b766a69605a696c6061273f27636469766027292762696a6764695a7364776c6467696076273f275e5827292771273f27303035353c3337343437313234272927676c715a75776a716a666a69273f2763646976602778; bit_env=LVdHnIescW9BCGpo5gGuqIlwNfgj757SBdMhdZXBSWjPWbxp9Nv_B2vUt_LtEvr-ioRv0E9b8N8HWiOHe20JqcUhO4YmpIM6gB83hjgqZfmAhYEbzJR7z2bRViJaPg4xeoyGhwdjwK_Bzogp6uoUs4ov-P4JYzMh78i7jaY5Pzd6h3CaVO-eUKnTiFfUlJo_jmhSfHXGdwkurXwR4lO_UnU4Loqa0YlmDiyi0fPxURFIN5t4Ny6Ua8LLSYcUrBXHlXoQ5G4bQN4XqwuWwT9YauexXbkotU1Jv8pMJUiAhlFIMjbvfTutTSnOXJLoH_JsR_doifURl0wf8CIa_OcYw-A2VglrpbaFU6HDVTKbSRKovzIMY9bUwl_4EAiLBf87g2BU0Uz1MHd_lGNdH3ImEWpLtdRvUsW_KD7q87rPsEGVTceyQ5U3ZlETqoEOwOiggNGu5lL_1O8lt8_7eydeGA%3D%3D; gulu_source_res=eyJwX2luIjoiM2Y3NGJhZDgxMzc3OThkNmVkN2U5ZjM3NDMzNGJkYjMwNzRhYjI0ZWJhMDZkMzdmYWNiNjgzNTY2ZjY0OGUyNCJ9; passport_auth_mix_state=c534f2qcgpohqv4juisp74wq28e90snz
+  proxies:
+      http:
+      https:
+
+tiktok:
+  headers:
+    user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36
+    referer: https://www.tiktok.com/
+    cookies: tt_csrf_token=bwnaRGd9-B-0ce8ntqw9jtGzAdvzTRKNpBl0; ak_bmsc=75A1956756DE42FD14ED069AAE7A8780~000000000000000000000000000000~YAAQXCw+F8jpmBGQAQAAIfGsFBj+ZEGzR/ZeiuPpMtItu0QQUQRmjBX2kADliy6QA9rZSfrxRUZc9zuRrI4/xbIrAwA/nkdguGpa+v3QSn/1sk5uP2aqLVm0eYB/SGNafa2h2QvIPbLNiSCRhgq1GalZJL4+udqDnyBRJWE74nin74bZwrVDvCX1s8M2hWqZ9/jTkdm4sfwON9MdJIEtjAPlddQ4gxoqjPoWhfnrm24dhPT4OjL1B8QP1mgurj7zJGspqD53VcjkAl65gHVxp3dwZ5WbPYpqrh9j8wo2u/Wh6uhX+0HWmkv5yVZyTyYQTl3/ilPp9G4CuIUi84gaPLjNYea9AEnphNX0ywzDa6/yegfqyE6r3wqBBDCrR1xRM98YEB4A5PV7pw==; tt_chain_token=ljZFLdRDfyfDflXMg5XGpg==; tiktok_webapp_theme_auto_dark_ab=1; tiktok_webapp_theme=dark; perf_feed_cache={%22expireTimestamp%22:1718503200000%2C%22itemIds%22:[%227348816520216186158%22%2C%227356022137678810410%22%2C%227349561209340857630%22]}; s_v_web_id=verify_lxe3l432_JnDE5WWo_URef_4WrS_88IM_fd1CqEXZs4dZ; passport_csrf_token=af197f073ed95f4dc2636f24d55566a6; passport_csrf_token_default=af197f073ed95f4dc2636f24d55566a6; ttwid=1%7CuNT4GcgvvOjH8rTETh9d9xti_QDJjlcnSK2V7djIpuc%7C1718333954%7Cf81b989a495aedff91302da4d0a3ab6055dea486fb203a4326b37d5a5346ad0c; msToken=1Mhpyi8MlaZjM6bbLDVUhCj_6C0kEO_1_Nb62ByXLg7wy_vLnBxdMFpKclhf4HYnEjCghk2Gq47ZM5jPj3L1yFxQUZvq4oPLo1b2Wfe_33RE94uIxdiR-eSueWbcYDDgOj1Pn9Wyid5Uf5fzBQ7xxFA=; bm_sv=9ADBA7BE06EC41817F117E2279F1410C~YAAQXCw+F8bsmBGQAQAAzSewFBg2fP3Zd0aky2x7S13D97O64xi8EXhoKORBnPQyCHlh0iSlh63FFjoy6peDWaF3lkWaTly3Z7I7WvWk1GCntnYzpJaSCE5EO2OL38zPWpHcgGWuekluvptHXsheedNEefN4SUHVMt4jJynWNeTKrao0RmNLkH4zGs7QO6+MPCt94QFvNfLjBRr0wVcXlN/hx9m6kcvCyzsBBqEnpugoYvZ0SMA+INsKI5PDfQz1~1; msToken=449_l3kdcLmnEHdDP0uACa5EcPVL1NbpjyVv8yah61EwxIPZRDlGwpGIkpIjH0Tk-CDtoKwFrDdP1v2AOpwmdoIz5oQzPEXCdyfGzcVXCHbwMX1fwPxMHpea5yFPUYEDlNWaCFlgLnejRdWeN5sB_lE=
+  proxies:
+      http:
+      https:
+  msToken:
+      url: https://mssdk.tiktokw.us/web/report?msToken=1Ab-7YxR9lUHSem0PraI_XzdKmpHb6j50L8AaXLAd2aWTdoJCYLfX_67rVQFE4UwwHVHmyG_NfIipqrlLT3kCXps-5PYlNAqtdwEg7TrDyTAfCKyBrOLmhMUjB55oW8SPZ4_EkNxNFUdV7MquA==
+      magic: 538969122
+      version: 1
+      dataType: 8
+      strData: 3BvqYbNXLLOcZehvxZVbjpAu7vq82RoWmFSJHLFwzDwJIZevE0AeilQfP55LridxmdGGjknoksqIsLqlMHMif0IFK/Br7JWqxOHnYuMwVCnttFc0Y4MFvdVWM5FECiEulJC0Dc+eeVsNSrFnAc9K7fazqdglyJgGLSfXIJmgyCvvQ4pg0u5HBVVugLSWs242X42fjoWymaUCLZJQo6vi6WLyuV7l5IC3Mg+lelr5xBQD6Q7hBIFEw8zzxJ1n2DyA4xLbOHTQdKvEtsK7XzyWwjpRnojPTbBl69Zosnuru+lOBIl+tFu/+hCQ1m0jYZwTP4rVE75L3Du6+KZ5v/9TyFYjq7y3y9bGLP4d7yQueJbF90G1yrZ6htElrZ2vqZKDrIqBVbmOZr/nph12k2JKrITtN0R/pMsp0sJ4gesQnXxcD/pLOFAINHk7umgbe6LzJ7+TLUdGuO4M7xiEg/jCqhjgJX1izZ4NPoBDp35zRxj6Y6OrcstlTN/cv5sz663+Nco/mEwhGq2VwrL4gAIAPycndIsb48dPdtngmLqNDNN0ZyVRjgqVIDXXrxigXCkR9CH89Dlrrb7QQqWVgRXz9/k5ihEM43BR3sd3mMU/XgFLN1Aoxf6GzzdxP2QPBI75/ZoHoAmu54v8gTmA3ntCGlEF0zgaFGTdpkGdb+oZgyQM4pw1aAyxmFINXkpD3IKKoGev9kD9gTFnhiQMGCMemhZS7ZYdbuGu0Cb+lQKaL/QTt80FMyGmW8kzVy9xW/ja9BcdEJYRoaufuFRkBFG5ay8x4WHLR6hEapXqQial/cREbLL4sQytpjtmnndFqvT7xN5DhgsLY2Z7451MJhD6NJXKNrMafGZSbItzQWY=
+      User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36
+bilibili:
+  headers:
+    accept_language:
+    user_agent:
+    referer:
+    cookies:
+  proxies:
+      http:
+      https:
