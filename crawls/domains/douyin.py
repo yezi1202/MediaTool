@@ -46,6 +46,7 @@ class Douyin:
                     raise RuntimeError(f"Không thể tạo a_bogus: {str(e)}")
                 endpoint_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?{urlencode(params.dict())}&a_bogus={a_bogus}"
                 data = await crawler.fetch_get_json(endpoint_url)
+                # return data
             except Exception as e:
                 raise RuntimeError(f"Đã xảy ra lỗi khi lấy dữ liệu phương tiện: {str(e)}")
         data = data.get("aweme_detail")

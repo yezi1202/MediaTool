@@ -6,7 +6,6 @@ import re
 
 from httpx import Response
 
-# Import các lỗi tùy chỉnh từ module utils
 from utils.exceptions import (
     Error,
     ConnectionError,
@@ -21,44 +20,44 @@ from utils.exceptions import (
 
 class BaseCrawler:
     """
-    Client Crawler cơ bản (Base crawler client)
+    基础爬虫客户端 (Base crawler client)
     """
 
     def __init__(
             self,
             proxies: dict = None,
-            max_retries: int = 3,       # Số lần thử lại tối đa
-            max_connections: int = 50,   # Kết nối tối đa
-            timeout: int = 10,           # Thời gian chờ
-            max_tasks: int = 50,         # Số tác vụ đồng thời tối đa
-            crawler_headers: dict = {},  # Headers cho crawler
+            max_retries: int = 3,
+            max_connections: int = 50,
+            timeout: int = 10,
+            max_tasks: int = 50,
+            crawler_headers: dict = {},
     ):
         if isinstance(proxies, dict):
             self.proxies = proxies
+            # [f"{k}://{v}" for k, v in proxies.items()]
         else:
             self.proxies = None
 
-        # Headers yêu cầu của crawler
+        # 爬虫请求头 / Crawler request header
         self.crawler_headers = crawler_headers or {}
 
-        # Số lượng tác vụ không đồng bộ (Asynchronous tasks)
+        # 异步的任务数 / Number of asynchronous tasks
         self._max_tasks = max_tasks
         self.semaphore = asyncio.Semaphore(max_tasks)
 
-        # Giới hạn số lượng kết nối tối đa
+        # 限制最大连接数 / Limit the maximum number of connections
         self._max_connections = max_connections
         self.limits = httpx.Limits(max_connections=max_connections)
 
-        # Số lần thử lại cho logic nghiệp vụ
+        # 业务逻辑重试次数 / Business logic retry count
         self._max_retries = max_retries
-        # Số lần thử lại cho kết nối tầng dưới
+        # 底层连接重试次数 / Underlying connection retry count
         self.atransport = httpx.AsyncHTTPTransport(retries=max_retries)
 
-        # Thời gian chờ (Timeout)
+        # 超时等待时间 / Timeout waiting time
         self._timeout = timeout
         self.timeout = httpx.Timeout(timeout)
-        
-        # Client không đồng bộ (Asynchronous client)
+        # 异步客户端 / Asynchronous client
         self.aclient = httpx.AsyncClient(
             headers=self.crawler_headers,
             proxies=self.proxies,
@@ -68,21 +67,18 @@ class BaseCrawler:
         )
 
     async def fetch_response(self, endpoint: str) -> Response:
-        """Lấy phản hồi thô từ endpoint"""
         return await self.get_fetch_data(endpoint)
 
     async def fetch_get_json(self, endpoint: str) -> dict:
-        """Thực hiện GET và trả về dữ liệu JSON"""
         response = await self.get_fetch_data(endpoint)
         return self.parse_json(response)
 
     async def fetch_post_json(self, endpoint: str, params: dict = {}, data=None) -> dict:
-        """Thực hiện POST và trả về dữ liệu JSON"""
         response = await self.post_fetch_data(endpoint, params, data)
         return self.parse_json(response)
 
     def parse_json(self, response: Response) -> dict:
-        """Phân tích cú pháp JSON từ phản hồi"""
+
         if (
                 response is not None
                 and isinstance(response, Response)
@@ -90,35 +86,53 @@ class BaseCrawler:
         ):
             try:
                 return response.json()
-            except json.JSONDecodeError:
-                # Thử sử dụng regex để tìm dữ liệu JSON trong response.text
+            except json.JSONDecodeError as e:
+                # 尝试使用正则表达式匹配response.text中的json数据
                 match = re.search(r"\{.*\}", response.text)
                 try:
                     return json.loads(match.group())
-                except (json.JSONDecodeError, AttributeError):
-                    raise ResponseError("Phân tích dữ liệu JSON thất bại")
+                except json.JSONDecodeError as e:
+                    # logger.error("解析 {0} 接口 JSON 失败： {1}".format(response.url, e))
+                    raise ResponseError("解析JSON数据失败")
+
         else:
-            raise ResponseError("Lấy dữ liệu thất bại")
+            # if isinstance(response, Response):
+            #     logger.error(
+            #         "获取数据失败。状态码: {0}".format(response.status_code)
+            #     )
+            # else:
+            #     logger.error("无效响应类型。响应类型: {0}".format(type(response)))
+
+            raise ResponseError("获取数据失败")
 
     async def get_fetch_data(self, url: str):
-        """Lấy dữ liệu bằng phương thức GET với cơ chế thử lại"""
+
         for attempt in range(self._max_retries):
             try:
                 response = await self.aclient.get(url, follow_redirects=True)
                 if not response.text.strip() or not response.content:
-                    error_message = f"Lần thử thứ {attempt + 1}: Nội dung phản hồi trống, Mã lỗi: {response.status_code}, URL: {response.url}"
+                    error_message = "第 {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
+                                                                                         response.status_code,
+                                                                                         response.url)
+
+                    # logger.warning(error_message)
 
                     if attempt == self._max_retries - 1:
-                        raise RetryExhaustedError("Lấy dữ liệu thất bại, đã đạt giới hạn số lần thử lại")
+                        raise RetryExhaustedError(
+                            "获取端点数据失败, 次数达到上限"
+                        )
 
                     await asyncio.sleep(self._timeout)
                     continue
 
+                # logger.info("响应状态码: {0}".format(response.status_code))
                 response.raise_for_status()
                 return response
 
             except httpx.RequestError:
-                raise ConnectionError(f"Kết nối tới endpoint thất bại, vui lòng kiểm tra mạng hoặc proxy: {url} | Proxy: {self.proxies} | Class: {self.__class__.__name__}")
+                raise ConnectionError("连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}"
+                                         .format(url, self.proxies, self.__class__.__name__)
+                                         )
 
             except httpx.HTTPStatusError as http_error:
                 self.handle_http_status_error(http_error, url, attempt + 1)
@@ -127,7 +141,6 @@ class BaseCrawler:
                 e.display_error()
 
     async def post_fetch_data(self, url: str, params: dict = {}, data=None):
-        """Lấy dữ liệu bằng phương thức POST với cơ chế thử lại"""
         for attempt in range(self._max_retries):
             try:
                 response = await self.aclient.post(
@@ -137,17 +150,29 @@ class BaseCrawler:
                     follow_redirects=True
                 )
                 if not response.text.strip() or not response.content:
+                    error_message = "第 {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
+                                                                                         response.status_code,
+                                                                                         response.url)
+
+                    # logger.warning(error_message)
+
                     if attempt == self._max_retries - 1:
-                        raise RetryExhaustedError("Lấy dữ liệu thất bại, đã đạt giới hạn số lần thử lại")
+                        raise RetryExhaustedError(
+                            "获取端点数据失败, 次数达到上限"
+                        )
 
                     await asyncio.sleep(self._timeout)
                     continue
 
+                # logger.info("响应状态码: {0}".format(response.status_code))
                 response.raise_for_status()
                 return response
 
             except httpx.RequestError:
-                raise ConnectionError(f"Kết nối thất bại: {url} | Proxy: {self.proxies}")
+                raise ConnectionError(
+                    "连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}".format(url, self.proxies,
+                                                                                   self.__class__.__name__)
+                )
 
             except httpx.HTTPStatusError as http_error:
                 self.handle_http_status_error(http_error, url, attempt + 1)
@@ -156,37 +181,61 @@ class BaseCrawler:
                 e.display_error()
 
     async def head_fetch_data(self, url: str):
-        """Lấy thông tin header bằng phương thức HEAD"""
+
         try:
             response = await self.aclient.head(url)
+            # logger.info("响应状态码: {0}".format(response.status_code))
             response.raise_for_status()
             return response
+
         except httpx.RequestError:
-            raise ConnectionError(f"Kết nối thất bại: {url}")
+            raise ConnectionError("连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}".format(
+                url, self.proxies, self.__class__.__name__
+            )
+            )
+
         except httpx.HTTPStatusError as http_error:
             self.handle_http_status_error(http_error, url, 1)
+
         except Error as e:
             e.display_error()
 
     def handle_http_status_error(self, http_error, url: str, attempt):
-        """Xử lý các lỗi trạng thái HTTP cụ thể"""
+
         response = getattr(http_error, "response", None)
         status_code = getattr(response, "status_code", None)
 
         if response is None or status_code is None:
-            raise ResponseError(f"Gặp lỗi bất thường khi xử lý lỗi HTTP: {http_error}")
+            # logger.error("HTTP状态错误: {0}, URL: {1}, 尝试次数: {2}".format(
+            #     http_error, url, attempt
+            # )
+            # )
+            raise ResponseError(f"处理HTTP错误时遇到意外情况: {http_error}")
 
         if status_code == 302:
             pass
         elif status_code == 404:
-            raise NotFoundError(f"Không tìm thấy trang (404)")
+            raise NotFoundError(f"HTTP Status Code {status_code}")
         elif status_code == 503:
-            raise UnavailableError(f"Dịch vụ không khả dụng (503)")
+            raise UnavailableError(f"HTTP Status Code {status_code}")
         elif status_code == 408:
-            raise TimeoutError(f"Hết thời gian chờ (408)")
+            raise TimeoutError(f"HTTP Status Code {status_code}")
         elif status_code == 401:
-            raise UnauthorizedError(f"Chưa được cấp quyền (401)")
+            raise UnauthorizedError(f"HTTP Status Code {status_code}")
         elif status_code == 429:
-            raise RateLimitError(f"Bị giới hạn tốc độ truy cập (429)")
+            raise RateLimitError(f"HTTP Status Code {status_code}")
         else:
-            pass
+            # logger.error("HTTP状态错误: {0}, URL: {1}, 尝试次数: {2}".format(
+            #     status_code, url, attempt
+            # )
+            # )
+            raise ResponseError(f"HTTP状态错误: {status_code}")
+
+    async def close(self):
+        await self.aclient.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.aclient.aclose()
