@@ -1,3 +1,7 @@
+Flask==3.0.0
+flask-socketio==5.3.5
+python-socketio==5.10.0
+python-engineio==4.8.0
 aiofiles==23.2.1
 annotated-types==0.6.0
 anyio==4.3.0
@@ -36,4 +40,4 @@ uvicorn==0.29.0
 websockets==12.0
 gmssl==3.2.2
 tenacity~=9.0.0
-flask
+python-dotenv==1.0.0

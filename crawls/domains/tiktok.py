@@ -3,11 +3,14 @@ import re
 import httpx
 from config.config import Config
 from crawls.base import BaseCrawler
-from utils.abogus import ABogus as AB
 from utils.xbogus import XBogus as XB
 from urllib.parse import urlencode, quote
 from pydantic import BaseModel
 from utils.utils import utils
+from utils.exceptions import (
+    URLError, ExtractError, ConnectionError,
+    AuthenticationError, TimeoutError
+)
 
 
 class TikTok:
@@ -31,12 +34,33 @@ class TikTok:
             }
         }
 
-    async def get_media_data(self, url:str):
-
+    async def get_media_data(self, url: str):
+        """
+        Extract media data from TikTok URL
+        
+        Args:
+            url (str): TikTok video URL
+            
+        Returns:
+            dict: Media data
+            
+        Raises:
+            URLError: Invalid URL
+            ExtractError: Extraction failed
+            ConnectionError: Network error
+        """
         if not isinstance(url, str):
-            raise TypeError("url phải là một chuỗi.")
-        aweme_id = await self.get_aweme_id(url)
-        crawler = BaseCrawler(proxies=self.kwargs["proxies"],crawler_headers=self.kwargs["headers"])
+            raise URLError("URL phải là một chuỗi", {'url': url})
+        
+        try:
+            aweme_id = await self.get_aweme_id(url)
+        except Exception as e:
+            raise URLError(f"Không thể lấy video ID: {str(e)}", {'url': url, 'error': str(e)})
+        
+        crawler = BaseCrawler(
+            proxies=self.kwargs["proxies"],
+            crawler_headers=self.kwargs["headers"]
+        )
 
         async with crawler:
             try:
@@ -46,102 +70,130 @@ class TikTok:
                 try:
                     xb_value = XB(user_agent=self.kwargs["headers"]["User-Agent"]).getXBogus(params_str)
                 except Exception as e:
-                    raise RuntimeError(f"Không thể tạo x_bogus: {str(e)}")
+                    raise ExtractError(f"Lỗi tạo X-Bogus: {str(e)}", {'aweme_id': aweme_id})
+                
                 separator = "&" if "?" in "https://www.tiktok.com/api/item/detail/" else "?"
                 endpoint_url = f"https://www.tiktok.com/api/item/detail/{separator}{params_str}&X-Bogus={xb_value[1]}"
                 data = await crawler.fetch_get_json(endpoint_url)
+                
+            except httpx.TimeoutException as e:
+                raise TimeoutError("Yêu cầu bị quá hạn", {'url': endpoint_url})
+            except httpx.ConnectError as e:
+                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': url})
             except Exception as e:
-                raise RuntimeError(f"Đã xảy ra lỗi khi lấy dữ liệu phương tiện: {str(e)}")
+                raise ExtractError(f"Lỗi lấy dữ liệu: {str(e)}", {'url': url, 'error': str(e)})
 
-        aweme_type = data.get("aweme_type")
+        try:
+            aweme_type = data.get("aweme_type")
+            url_type = utils.get_media_type(aweme_type)
+            api_data = None
+            
+            if url_type == "video":
+                wm_video = (
+                    data.get('video', {})
+                    .get('download_addr', {})
+                    .get('url_list', [None])[0]
+                )
 
-        url_type = utils.get_media_type(aweme_type)
-        api_data = None
-        if url_type == "video":
-            wm_video = (
-                data.get('video', {})
-                .get('download_addr', {})
-                .get('url_list', [None])[0]
-            )
-
-            api_data = {
-                'video_data':
-                    {
+                api_data = {
+                    'video_data': {
                         'wm_video_url': wm_video,
                         'wm_video_url_HQ': wm_video,
-                        # 'nwm_video_url': data['video']['playAddr'],
                         'nwm_video_url': data['video']['play_addr']['url_list'][0],
-                        # 'nwm_video_url_HQ': data['video']['bitrateInfo'][0]['PlayAddr']['UrlList'][0]
                         'nwm_video_url_HQ': data['video']['bit_rate'][0]['play_addr']['url_list'][0]
                     }
-            }
-        elif url_type == 'image':
-            no_watermark_image_list = []
-            watermark_image_list = []
-            for i in data['image_post_info']['images']:
-                no_watermark_image_list.append(i['display_image']['url_list'][0])
-                watermark_image_list.append(i['owner_watermark_image']['url_list'][0])
-            api_data = {
-                'image_data':
-                    {
+                }
+            elif url_type == 'image':
+                no_watermark_image_list = []
+                watermark_image_list = []
+                for i in data['image_post_info']['images']:
+                    no_watermark_image_list.append(i['display_image']['url_list'][0])
+                    watermark_image_list.append(i['owner_watermark_image']['url_list'][0])
+                api_data = {
+                    'image_data': {
                         'no_watermark_image_list': no_watermark_image_list,
                         'watermark_image_list': watermark_image_list
                     }
                 }
-        result_data = {
-            "type": url_type,
-            "platform": "tiktok",
-            "video_id": aweme_id,
-            'desc': data.get("desc"),
-            'create_time': data.get("create_time"),
-            'author': data.get('author'),
-            'music': data.get('music'),
-            'statistics': data.get('statistics'),
-            'cover_data': {
-                'cover': data.get("video", {}).get("cover"),
-                'origin_cover': data.get("video", {}).get("origin_cover"),
-                'dynamic_cover': data.get("video", {}).get("dynamic_cover")
-            },
-            'hashtags': data.get('text_extra'),
-            'api_data': api_data
-        }
-        return result_data
+            
+            result_data = {
+                "type": url_type,
+                "platform": "tiktok",
+                "video_id": aweme_id,
+                'desc': data.get("desc", ""),
+                'create_time': data.get("create_time"),
+                'author': data.get('author', {}),
+                'music': data.get('music'),
+                'statistics': data.get('statistics'),
+                'cover_data': {
+                    'cover': data.get("video", {}).get("cover"),
+                    'origin_cover': data.get("video", {}).get("origin_cover"),
+                    'dynamic_cover': data.get("video", {}).get("dynamic_cover")
+                },
+                'hashtags': data.get('text_extra'),
+                'api_data': api_data
+            }
+            return result_data
+            
+        except KeyError as e:
+            raise ExtractError(f"Lỗi định dạng dữ liệu: {str(e)}", {'url': url, 'missing_key': str(e)})
+        except Exception as e:
+            raise ExtractError(f"Lỗi xử lý dữ liệu: {str(e)}", {'url': url})
 
-    async def get_aweme_id(self, url:str):
+    async def get_aweme_id(self, url: str):
+        """Extract aweme ID from TikTok URL"""
         url_pattern = re.compile(r"https?://\S+")
         match = url_pattern.search(url)
-        if not re.match:
-            raise ValueError(f"Không tìm thấy URL hợp lệ trong: {url}")
+        if not match:
+            raise URLError(f"Không tìm thấy URL hợp lệ trong: {url}", {'url': url})
+        
         url = match.group(0)
+        
         if "tiktok" and "@" in url:
             video_match = self._TIKTOK_AWEMEID_PATTERN.search(url)
             photo_match = self._TIKTOK_PHOTOID_PATTERN.search(url)
             
             if not video_match and not photo_match:
-                raise RuntimeError("Không tìm thấy aweme_id hoặc photo_id trong URL: {0}".format(url))
+                raise URLError("Không tìm thấy aweme_id hoặc photo_id trong URL", {'url': url})
             
             aweme_id = video_match.group(1) if video_match else photo_match.group(1)
 
             if aweme_id is None:
-                raise RuntimeError("获取 aweme_id 或 photo_id 失败，{0}".format(url))
+                raise URLError("Lấy aweme_id hoặc photo_id thất bại", {'url': url})
             return aweme_id
+        
         transport = httpx.AsyncHTTPTransport(retries=10)
         async with httpx.AsyncClient(
-                transport=transport, proxies=self.proxies, timeout=10
+            transport=transport, proxies=self.kwargs["proxies"], timeout=10
         ) as client:
-            res = await client.get(url,follow_redirects=True)
+            try:
+                res = await client.get(url, follow_redirects=True)
 
-            if res.status_code in {200,444}:
-                if self._TIKTOK_NOTFOUND_PATTERN.search(str(res.url)):
-                    raise RuntimeError(f"URL không tồn tại: {url}")
-                video_match = self._TIKTOK_AWEMEID_PATTERN.search(str(res.url))
-                photo_match = self._TIKTOK_PHOTOID_PATTERN.search(str(res.url))
-                if not video_match and not photo_match:
-                    raise RuntimeError("Không tìm thấy aweme_id hoặc photo_id trong URL: {0}".format(url))
-                aweme_id = video_match.group(1) if video_match else photo_match.group(1)
-                if aweme_id is None:
-                    raise RuntimeError("lấy aweme_id hoặc photo_id thất bại，{0}".format(url))
-                return aweme_id
+                if res.status_code in {200, 444}:
+                    if self._TIKTOK_NOTFOUND_PATTERN.search(str(res.url)):
+                        raise URLError(f"URL không tồn tại: {url}", {'url': url, 'status_code': res.status_code})
+                    
+                    video_match = self._TIKTOK_AWEMEID_PATTERN.search(str(res.url))
+                    photo_match = self._TIKTOK_PHOTOID_PATTERN.search(str(res.url))
+                    
+                    if not video_match and not photo_match:
+                        raise URLError("Không tìm thấy aweme_id hoặc photo_id trong URL", {'url': url, 'resolved_url': str(res.url)})
+                    
+                    aweme_id = video_match.group(1) if video_match else photo_match.group(1)
+                    if aweme_id is None:
+                        raise URLError("Lấy aweme_id hoặc photo_id thất bại", {'url': url})
+                    return aweme_id
+                else:
+                    raise ExtractError(f"HTTP Error {res.status_code}", {'url': url, 'status_code': res.status_code})
+                    
+            except httpx.TimeoutException:
+                raise TimeoutError("Yêu cầu bị quá hạn", {'url': url})
+            except httpx.ConnectError as e:
+                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': url})
+            except Exception as e:
+                raise ExtractError(f"Lỗi trích xuất URL: {str(e)}", {'url': url})
+
+
 class Params(BaseModel):
     itemId: str
     WebIdLastTime: str = str(utils.get_timestamp("sec"))
@@ -170,16 +222,10 @@ class Params(BaseModel):
     os: str = "windows"
     priority_region: str = "US"
     referer: str = ""
-    region: str = "US"  # SG JP KR...
+    region: str = "US"
     root_referer: str = quote("https://www.tiktok.com/", safe="")
     screen_height: int = 1080
     screen_width: int = 1920
     webcast_language: str = "en"
     tz_name: str = quote("America/Tijuana", safe="")
-    # verifyFp: str = VerifyFpManager.gen_verify_fp()
     msToken: str = utils.gen_token_domain("tiktok")
-
-
-
-
-
