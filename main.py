@@ -21,23 +21,24 @@ socketio = SocketIO(
     max_http_buffer_size=50 * 1024 * 1024
 )
 
-# Lưu trữ socket client
 connected_clients = {}
 
-def detect_platform(url):
-    """Detect platform from URL"""
+
+def detect_platform(url: str) -> str:
+    """Detect platform from URL."""
     url_lower = url.lower()
     if "tiktok" in url_lower:
         return "TIKTOK"
     elif "bilibili" in url_lower:
         return "BILIBILI"
-    elif "facebook" in url_lower:
+    elif "facebook" in url_lower or "fb.watch" in url_lower:
         return "FACEBOOK"
     else:
         return "DOUYIN"
 
-async def extract_video_data(url, platform):
-    """Extract video data from URL based on platform"""
+
+async def extract_video_data(url: str, platform: str) -> dict:
+    """Extract video data from URL based on platform."""
     try:
         if platform == "DOUYIN":
             douyin = Douyin()
@@ -48,257 +49,239 @@ async def extract_video_data(url, platform):
             data = await tiktok.get_media_data(url)
             return format_response_data(data, platform, url)
         elif platform == "BILIBILI":
-            return {"error": "Bilibili chưa được hỗ trợ"}
+            return {"error": "Bilibili chưa được hỗ trợ", "url": url, "platform": platform}
         else:
-            return {"error": "Platform không được hỗ trợ"}
+            return {"error": "Platform không được hỗ trợ", "url": url, "platform": platform}
     except Exception as e:
         return {
             "error": f"Lỗi khi trích xuất: {str(e)}",
             "platform": platform,
             "url": url,
-            "status": "error"
         }
 
-def format_response_data(data, platform, url):
-    """Format API response to match frontend requirements"""
+
+def _safe_url(obj, fallback: str = "") -> str:
+    """
+    Safely extract first URL from a Douyin url_list object.
+    Handles both dict {"url_list": [...]} and plain string.
+    """
+    if not obj:
+        return fallback
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, dict):
+        url_list = obj.get("url_list") or []
+        if url_list:
+            return url_list[0]
+    return fallback
+
+
+def format_response_data(data: dict, platform: str, original_url: str) -> dict:
+    """
+    Map raw crawler output → unified frontend schema.
+
+    Frontend expects:
+        id, platform, url, videoId, type, description,
+        author (display name), authorUid, authorSecUid,
+        authorProfileUrl, avatar, thumbnail,
+        timestamp, links{video, download}
+    """
     try:
-        author_info = data.get('author', {})
-        author_name = author_info.get('nickname', 'unknown')
-        author_uid = author_info.get('uid', '')
-        author_sec_uid = author_info.get('sec_uid', '')
-        
-        # Lấy avatar
-        avatar_url = author_info.get('avatar_larger', {}).get('url_list', [''])[0]
-        
-        # Lấy thumbnail
-        cover_url = data.get('cover_data', {}).get('origin_cover', '')
-        if not cover_url:
-            video_data = data.get('api_data', {}).get('video_data', {})
-            cover_url = video_data.get('wm_video_url', '')
-        
-        # Xử lý link download
-        api_data = data.get('api_data', {})
-        if data.get('type') == 'video':
-            video_data = api_data.get('video_data', {})
-            download_url = video_data.get('nwm_video_url_HQ', '')
+        # ── Author ──────────────────────────────────────────────────────────
+        author_info = data.get("author") or {}
+        author_name   = author_info.get("nickname") or author_info.get("unique_id") or "unknown"
+        author_uid    = str(author_info.get("uid") or author_info.get("id") or "")
+        author_sec_uid = author_info.get("sec_uid") or ""
+        unique_id      = author_info.get("unique_id") or author_info.get("short_id") or author_uid
+
+        # Douyin profile URL uses sec_uid; TikTok uses @uniqueId
+        if platform == "DOUYIN":
+            author_profile_url = (
+                f"https://www.douyin.com/user/{author_sec_uid}"
+                if author_sec_uid else ""
+            )
         else:
-            image_data = api_data.get('image_data', {})
-            download_url = image_data.get('no_watermark_image_list', [''])[0]
-        
+            author_profile_url = (
+                f"https://www.tiktok.com/@{unique_id}"
+                if unique_id else ""
+            )
+
+        # ── Avatar ───────────────────────────────────────────────────────────
+        # Douyin: author.avatar_thumb.url_list[0]  (avatar_larger may not exist)
+        avatar_url = (
+            _safe_url(author_info.get("avatar_thumb"))
+            or _safe_url(author_info.get("avatar_medium"))
+            or _safe_url(author_info.get("avatar_larger"))
+            or _safe_url(author_info.get("avatar_large"))
+        )
+
+        # ── Thumbnail / Cover ────────────────────────────────────────────────
+        # Douyin cover_data carries dicts {url_list:[...]}, not plain strings
+        cover_data = data.get("cover_data") or {}
+
+        thumbnail_url = (
+            _safe_url(cover_data.get("origin_cover"))
+            or _safe_url(cover_data.get("cover"))
+            or _safe_url(cover_data.get("dynamic_cover"))
+        )
+
+        # ── Download / Stream URLs ────────────────────────────────────────────
+        api_data   = data.get("api_data") or {}
+        media_type = data.get("type", "video")
+
+        if media_type == "video":
+            video_data = api_data.get("video_data") or {}
+            # nwm = no-watermark; prefer HQ
+            no_wm_url = (
+                video_data.get("nwm_video_url_HQ")
+                or video_data.get("nwm_video_url")
+                or ""
+            )
+            wm_url = (
+                video_data.get("wm_video_url_HQ")
+                or video_data.get("wm_video_url")
+                or ""
+            )
+            download_url = no_wm_url or wm_url
+            stream_url   = no_wm_url or wm_url
+        else:
+            # image / slideshow
+            image_data = api_data.get("image_data") or {}
+            no_wm_list = image_data.get("no_watermark_image_list") or []
+            download_url = no_wm_list[0] if no_wm_list else ""
+            stream_url   = download_url
+
+        # ── Build response ────────────────────────────────────────────────────
+        video_id = str(data.get("video_id") or "unknown")
         return {
-            "id": f"result-{data.get('video_id', 'unknown')}-{int(datetime.now().timestamp() * 1000)}",
+            "id": f"result-{video_id}-{int(datetime.now().timestamp() * 1000)}",
             "platform": platform,
-            "url": url,
-            "videoId": data.get('video_id', ''),
-            "type": data.get('type', 'video'),
-            "description": data.get('desc', ''),
+            "url": original_url,
+            "videoId": video_id,
+            "type": media_type,
+            "description": data.get("desc") or "",
+            # ── author fields ──
             "author": author_name,
             "authorUid": author_uid,
             "authorSecUid": author_sec_uid,
+            "authorProfileUrl": author_profile_url,
+            # ── media fields ──
             "avatar": avatar_url,
-            "thumbnail": cover_url,
+            "thumbnail": thumbnail_url,
             "timestamp": datetime.now().strftime("%H:%M"),
             "links": {
-                "short": f"https://mtrip.link/{data.get('video_id', '')[:4]}",
-                "video": data.get('api_data', {}).get('video_data', {}).get('nwm_video_url', ''),
-                "download": download_url
+                "video": stream_url,
+                "download": download_url,
             },
-            "status": "completed"
+            "status": "completed",
         }
+
     except Exception as e:
         return {
             "error": f"Lỗi định dạng dữ liệu: {str(e)}",
             "platform": platform,
-            "url": url,
-            "status": "error"
+            "url": original_url,
         }
 
-@app.route('/')
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/api/update-cookies', methods=['GET'])
+
+@app.route("/api/update-cookies", methods=["GET"])
 def update_cookies():
-    """API để cập nhật cookies cho domain"""
+    """Update cookies for a domain at runtime."""
     try:
-        domain = request.args.get('domain', '').lower()
-        cookies = request.args.get('cookies', '')
-        
+        domain  = request.args.get("domain", "").lower()
+        cookies = request.args.get("cookies", "")
         if not domain or not cookies:
-            return jsonify({
-                "success": False,
-                "error": "Thiếu domain hoặc cookies"
-            }), 400
-        
-        config = Config()
-        result = config.update_cookies(domain, cookies)
-        
+            return jsonify({"success": False, "error": "Thiếu domain hoặc cookies"}), 400
+        result = Config().update_cookies(domain, cookies)
         if result:
-            return jsonify({
-                "success": True,
-                "message": f"Cập nhật cookies cho {domain} thành công"
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": f"Domain {domain} không tồn tại"
-            }), 400
+            return jsonify({"success": True, "message": f"Cập nhật cookies cho {domain} thành công"})
+        return jsonify({"success": False, "error": f"Domain {domain} không tồn tại"}), 400
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": f"Lỗi khi cập nhật cookies: {str(e)}"
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@socketio.on('connect')
+
+# ── SocketIO events ───────────────────────────────────────────────────────────
+
+@socketio.on("connect")
 def handle_connect():
-    """Handle client connection"""
     client_id = request.sid
     connected_clients[client_id] = True
-    print(f"[CONNECT] Client {client_id} connected. Total: {len(connected_clients)}")
-    emit('connection_response', {'status': 'connected', 'client_id': client_id})
+    emit("connection_response", {"status": "connected", "client_id": client_id})
 
-@socketio.on('disconnect')
+
+@socketio.on("disconnect")
 def handle_disconnect():
-    """Handle client disconnection"""
     client_id = request.sid
-    if client_id in connected_clients:
-        del connected_clients[client_id]
-    print(f"[DISCONNECT] Client {client_id} disconnected. Total: {len(connected_clients)}")
+    connected_clients.pop(client_id, None)
 
-@socketio.on('extract_urls')
+
+@socketio.on("extract_urls")
 def handle_extract_urls(data):
-    """Handle URL extraction request"""
-
     client_id = request.sid
-    urls = data.get('urls', [])
+    urls = data.get("urls") or []
 
     if not urls:
-        socketio.emit(
-            'extraction_error',
-            {'error': 'Không có URL để xử lý'},
-            room=client_id
-        )
+        socketio.emit("extraction_error", {"error": "Không có URL để xử lý"}, room=client_id)
         return
 
-    # loading panel start
     socketio.emit(
-        'extraction_start',
-        {
-            'total': len(urls),
-            'message': f'Đang xử lý {len(urls)} URL...'
-        },
-        room=client_id
+        "extraction_start",
+        {"total": len(urls), "message": f"Đang xử lý {len(urls)} URL..."},
+        room=client_id,
     )
 
-    def process_urls(client_id, urls):
+    def process_urls(cid: str, url_list: list):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
         try:
-            for idx, raw_url in enumerate(urls):
-                url = str(raw_url).strip()
-
-                if not url:
-                    continue
-
+            for idx, raw_url in enumerate(url_list):
+                url      = str(raw_url).strip()
                 platform = detect_platform(url)
 
-                # loading item pending
                 socketio.emit(
-                    'extraction_pending',
-                    {
-                        'index': idx,
-                        'total': len(urls),
-                        'url': url,
-                        'platform': platform,
-                        'status': 'pending',
-                        'message': 'Đang trích xuất dữ liệu...'
-                    },
-                    room=client_id
+                    "extraction_pending",
+                    {"index": idx, "total": len(url_list), "url": url, "platform": platform},
+                    room=cid,
                 )
 
                 try:
-                    result = loop.run_until_complete(
-                        extract_video_data(url, platform)
-                    )
-
-                    if result.get('error'):
-                        socketio.emit(
-                            'extraction_result',
-                            {
-                                'index': idx,
-                                'total': len(urls),
-                                'status': 'error',
-                                'result': result,
-                                'message': result.get('error')
-                            },
-                            room=client_id
-                        )
-                    else:
-                        socketio.emit(
-                            'extraction_result',
-                            {
-                                'index': idx,
-                                'total': len(urls),
-                                'status': 'success',
-                                'result': result,
-                                'message': 'Trích xuất thành công'
-                            },
-                            room=client_id
-                        )
-
-                except Exception as e:
-                    print(f'[ERROR] URL PROCESS: {e}')
-                    traceback.print_exc()
-
+                    result = loop.run_until_complete(extract_video_data(url, platform))
+                    status = "error" if result.get("error") else "success"
                     socketio.emit(
-                        'extraction_result',
+                        "extraction_result",
+                        {"index": idx, "total": len(url_list), "status": status, "result": result},
+                        room=cid,
+                    )
+                except Exception as exc:
+                    traceback.print_exc()
+                    socketio.emit(
+                        "extraction_result",
                         {
-                            'index': idx,
-                            'total': len(urls),
-                            'status': 'error',
-                            'message': str(e),
-                            'result': {
-                                'url': url,
-                                'platform': platform,
-                                'status': 'error',
-                                'error': str(e)
-                            }
+                            "index": idx,
+                            "total": len(url_list),
+                            "status": "error",
+                            "result": {"url": url, "platform": platform, "error": str(exc)},
                         },
-                        room=client_id
+                        room=cid,
                     )
 
-        except Exception as e:
-            print(f'[ERROR] Extraction Thread: {e}')
+        except Exception as exc:
             traceback.print_exc()
-
-            socketio.emit(
-                'extraction_error',
-                {
-                    'error': str(e)
-                },
-                room=client_id
-            )
-
+            socketio.emit("extraction_error", {"error": str(exc)}, room=cid)
         finally:
             loop.close()
+            socketio.emit("extraction_complete", {"message": "Hoàn thành trích xuất"}, room=cid)
 
-            socketio.emit(
-                'extraction_complete',
-                {
-                    'message': 'Hoàn thành trích xuất'
-                },
-                room=client_id
-            )
+    threading.Thread(target=process_urls, args=(client_id, urls), daemon=True).start()
 
-    thread = threading.Thread(
-        target=process_urls,
-        args=(client_id, urls),
-        daemon=True
-    )
 
-    thread.start()
-
-if __name__ == '__main__':
-    print("🌸 MediaTool Trip - Starting server...")
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+if __name__ == "__main__":
+    print("🌸 MediaTool Trip — Starting on http://localhost:5000")
+    socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)

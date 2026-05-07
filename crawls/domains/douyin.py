@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import re
 import httpx
 from config.config import Config
@@ -9,169 +8,165 @@ from pydantic import BaseModel
 from utils.utils import utils
 from utils.exceptions import (
     URLError, ExtractError, ConnectionError,
-    AuthenticationError, TimeoutError
+    TimeoutError,
 )
 
 
 class Douyin:
 
-    _DOUYIN_VIDEO_URL_PATTERN = re.compile(r"video/([^/?]*)")
+    _DOUYIN_VIDEO_URL_PATTERN     = re.compile(r"video/([^/?]*)")
     _DOUYIN_VIDEO_URL_PATTERN_NEW = re.compile(r"[?&]vid=(\d+)")
-    _DOUYIN_NOTE_URL_PATTERN = re.compile(r"note/([^/?]*)")
-    _DOUYIN_DISCOVER_URL_PATTERN = re.compile(r"modal_id=([0-9]+)")
+    _DOUYIN_NOTE_URL_PATTERN      = re.compile(r"note/([^/?]*)")
+    _DOUYIN_DISCOVER_URL_PATTERN  = re.compile(r"modal_id=([0-9]+)")
 
     def __init__(self):
         self.config = Config().config["douyin"]
-        header_cfg = self.config["headers"]
+        hdr = self.config["headers"]
         self.kwargs = {
             "headers": {
-                "Accept-Language": header_cfg["accept_language"],
-                "User-Agent": header_cfg["user_agent"],
-                "Referer": header_cfg["referer"],
-                "Cookie": header_cfg["cookies"]
+                "Accept-Language": hdr.get("accept_language", "zh-CN,zh;q=0.9"),
+                "User-Agent":      hdr.get("user_agent", "Mozilla/5.0"),
+                "Referer":         hdr.get("referer", "https://www.douyin.com/"),
+                "Cookie":          hdr.get("cookies", ""),
             },
-            "proxies": {"http://": self.config["proxies"]["http"], "https://": self.config["proxies"]["https"]}
+            "proxies": {
+                "http://":  self.config["proxies"].get("http"),
+                "https://": self.config["proxies"].get("https"),
+            },
         }
 
-    async def get_media_data(self, url: str):
+    async def get_media_data(self, url: str) -> dict:
         """
-        Extract media data from Douyin URL
-        
-        Args:
-            url (str): Douyin video URL
-            
-        Returns:
-            dict: Media data
-            
-        Raises:
-            URLError: Invalid URL
-            ExtractError: Extraction failed
-            ConnectionError: Network error
+        Extract media data from a Douyin URL.
+        Returns a dict compatible with main.format_response_data().
         """
         if not isinstance(url, str):
-            raise URLError("URL phải là một chuỗi", {'url': url})
-        
-        try:
-            aweme_id = await self.get_aweme_id(url)
-        except Exception as e:
-            raise URLError(f"Không thể lấy video ID: {str(e)}", {'url': url, 'error': str(e)})
-        
-        crawler = BaseCrawler(
+            raise URLError("URL phải là một chuỗi", {"url": url})
+
+        aweme_id = await self.get_aweme_id(url)
+
+        async with BaseCrawler(
             proxies=self.kwargs["proxies"],
-            crawler_headers=self.kwargs["headers"]
-        )
-
-        async with crawler:
+            crawler_headers=self.kwargs["headers"],
+        ) as crawler:
+            params = Params(aweme_id=aweme_id)
             try:
-                params = Params(aweme_id=aweme_id)
-
-                try:
-                    a_bogus = quote(AB().get_value(params.dict(),)) 
-                except Exception as e:
-                    raise ExtractError(f"Lỗi tạo a_bogus: {str(e)}", {'aweme_id': aweme_id})
-                
-                endpoint_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?{urlencode(params.dict())}&a_bogus={a_bogus}"
-                data = await crawler.fetch_get_json(endpoint_url)
-                
-            except httpx.TimeoutException as e:
-                raise TimeoutError("Yêu cầu bị quá hạn", {'url': endpoint_url})
-            except httpx.ConnectError as e:
-                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': url})
+                a_bogus = quote(AB().get_value(params.dict()))
             except Exception as e:
-                raise ExtractError(f"Lỗi lấy dữ liệu: {str(e)}", {'url': url, 'error': str(e)})
-        
-        try:
-            data = data.get("aweme_detail")
-            if not data:
-                raise ExtractError("Không nhận được dữ liệu video", {'url': url})
-            
-            aweme_type = data.get("aweme_type")
-            url_type = utils.get_media_type(aweme_type)
-            api_data = None
-            
-            if url_type == "video":
-                uri = data["video"]['play_addr']['uri']
-                api_data = {
-                    'video_data': {
-                        'wm_video_url': f"https://aweme.snssdk.com/aweme/v1/playwm/?video_id={uri}&radio=1080p&line=0",
-                        'wm_video_url_HQ': data['video']['play_addr']['url_list'][0],
-                        'nwm_video_url': f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=1080p&line=0",
-                        'nwm_video_url_HQ': data['video']['play_addr']['url_list'][0].replace('playwm', 'play')
-                    }
-                }
-            elif url_type == 'image':
-                no_watermark_image_list = []
-                watermark_image_list = []
-                for i in data['images']:
-                    no_watermark_image_list.append(i['url_list'][0])
-                    watermark_image_list.append(i['download_url_list'][0])
-                api_data = {
-                    'image_data': {
-                        'no_watermark_image_list': no_watermark_image_list,
-                        'watermark_image_list': watermark_image_list
-                    }
-                }
-            
-            result_data = {
-                "type": url_type,
-                "platform": "douyin",
-                "video_id": aweme_id,
-                'desc': data.get("desc", ""),
-                'create_time': data.get("create_time"),
-                'author': data.get('author', {}),
-                'music': data.get('music'),
-                'statistics': data.get('statistics'),
-                'cover_data': {
-                    'cover': data.get("video", {}).get("cover"),
-                    'origin_cover': data.get("video", {}).get("origin_cover"),
-                    'dynamic_cover': data.get("video", {}).get("dynamic_cover")
-                },
-                'hashtags': data.get('text_extra'),
-                'api_data': api_data
-            }
-            return result_data
-            
-        except KeyError as e:
-            raise ExtractError(f"Lỗi định dạng dữ liệu: {str(e)}", {'url': url, 'missing_key': str(e)})
-        except Exception as e:
-            raise ExtractError(f"Lỗi xử lý dữ liệu: {str(e)}", {'url': url})
+                raise ExtractError(f"Lỗi tạo a_bogus: {e}", {"aweme_id": aweme_id})
 
-    async def get_aweme_id(self, url: str):
-        """Extract aweme ID from Douyin URL"""
+            endpoint = (
+                f"https://www.douyin.com/aweme/v1/web/aweme/detail/"
+                f"?{urlencode(params.dict())}&a_bogus={a_bogus}"
+            )
+            try:
+                resp = await crawler.fetch_get_json(endpoint)
+            except httpx.TimeoutException:
+                raise TimeoutError("Yêu cầu bị quá hạn", {"url": endpoint})
+            except httpx.ConnectError as e:
+                raise ConnectionError(f"Lỗi kết nối: {e}", {"url": url})
+
+        # ── Parse response ────────────────────────────────────────────────────
+        detail = resp.get("aweme_detail")
+        if not detail:
+            raise ExtractError("API không trả về aweme_detail", {"url": url})
+
+        aweme_type = detail.get("aweme_type", 0)
+        media_type = utils.get_media_type(aweme_type)
+        video_obj  = detail.get("video") or {}
+
+        if media_type == "video":
+            # play_addr  → streaming (may have watermark depending on cookie)
+            # download_addr → download with watermark (high quality)
+            # No-watermark: build the /play/ endpoint directly from the URI
+            uri = video_obj.get("play_addr", {}).get("uri", "")
+
+            # CDN play URLs from play_addr (these are the best quality stream URLs)
+            play_url_list     = video_obj.get("play_addr", {}).get("url_list") or []
+            dl_url_list       = video_obj.get("download_addr", {}).get("url_list") or []
+
+            # Construct no-watermark URL via Douyin play API
+            nwm_url_api = (
+                f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=1080p&line=0"
+                if uri else ""
+            )
+            # Best CDN URL for streaming (index.html will open this)
+            stream_url = play_url_list[0] if play_url_list else nwm_url_api
+            # Download URL: no-watermark API endpoint is more reliable for download
+            download_url = nwm_url_api or (dl_url_list[0] if dl_url_list else stream_url)
+
+            api_data = {
+                "video_data": {
+                    "wm_video_url":    dl_url_list[0] if dl_url_list else "",
+                    "wm_video_url_HQ": dl_url_list[0] if dl_url_list else "",
+                    "nwm_video_url":   nwm_url_api,
+                    "nwm_video_url_HQ": nwm_url_api,
+                }
+            }
+        else:
+            images = detail.get("images") or []
+            no_wm_list = [img.get("url_list", [None])[0] for img in images if img.get("url_list")]
+            wm_list    = [img.get("download_url_list", [None])[0] for img in images if img.get("download_url_list")]
+            api_data = {
+                "image_data": {
+                    "no_watermark_image_list": no_wm_list,
+                    "watermark_image_list":    wm_list,
+                }
+            }
+
+        # Cover — keep as dict so _safe_url() in main.py can extract url_list[0]
+        return {
+            "type":        media_type,
+            "platform":    "douyin",
+            "video_id":    aweme_id,
+            "desc":        detail.get("desc", ""),
+            "create_time": detail.get("create_time"),
+            "author":      detail.get("author", {}),
+            "music":       detail.get("music"),
+            "statistics":  detail.get("statistics"),
+            "cover_data": {
+                "cover":         video_obj.get("cover"),          # dict {url_list:[...]}
+                "origin_cover":  video_obj.get("origin_cover"),   # dict {url_list:[...]}
+                "dynamic_cover": video_obj.get("dynamic_cover"),  # dict {url_list:[...]}
+            },
+            "hashtags": detail.get("text_extra"),
+            "api_data": api_data,
+        }
+
+    async def get_aweme_id(self, url: str) -> str:
+        """Resolve a short/long Douyin URL to its aweme_id."""
         transport = httpx.AsyncHTTPTransport(retries=5)
-        async with httpx.AsyncClient(
-            transport=transport, proxy=None, timeout=10
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, timeout=10) as client:
             try:
                 res = await client.get(url, follow_redirects=True)
                 res.raise_for_status()
-                response_url = str(res.url)
-                
+                resolved = str(res.url)
+
                 for pattern in [
                     self._DOUYIN_VIDEO_URL_PATTERN,
                     self._DOUYIN_VIDEO_URL_PATTERN_NEW,
                     self._DOUYIN_NOTE_URL_PATTERN,
-                    self._DOUYIN_DISCOVER_URL_PATTERN
+                    self._DOUYIN_DISCOVER_URL_PATTERN,
                 ]:
-                    match = pattern.search(response_url)
-                    if match:
-                        return match.group(1)
-                
-                raise URLError(f"Không thể tìm thấy video ID từ URL", {'url': url, 'resolved_url': response_url})
-                    
-            except httpx.TimeoutException:
-                raise TimeoutError("Yêu cầu bị quá hạn", {'url': url})
-            except httpx.ConnectError as e:
-                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': url})
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    raise URLError("Video không tồn tại hoặc đã bị xóa", {'url': url, 'status_code': 404})
-                else:
-                    raise ExtractError(f"Lỗi HTTP {e.response.status_code}", {'url': url, 'status_code': e.response.status_code})
-            except Exception as e:
-                raise ExtractError(f"Lỗi trích xuất URL: {str(e)}", {'url': url})
+                    m = pattern.search(resolved)
+                    if m:
+                        return m.group(1)
 
-         
+                raise URLError(
+                    "Không tìm thấy video ID trong URL",
+                    {"url": url, "resolved_url": resolved},
+                )
+            except httpx.TimeoutException:
+                raise TimeoutError("Yêu cầu bị quá hạn", {"url": url})
+            except httpx.ConnectError as e:
+                raise ConnectionError(f"Lỗi kết nối: {e}", {"url": url})
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                if code == 404:
+                    raise URLError("Video không tồn tại hoặc đã bị xóa", {"url": url})
+                raise ExtractError(f"HTTP {code}", {"url": url})
+
+
 class Params(BaseModel):
     aweme_id: str
     msToken: str = ""
