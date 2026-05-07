@@ -519,7 +519,7 @@
         }
 
         function createResultPanel(item) {
-            const hasThumbnail = item.thumbnail && item.thumbnail.trim() !== '';
+            const hasThumbnail = item?.thumbnail && item?.thumbnail?.url_list[0] !== '';
             const imageHtml = hasThumbnail ? 
                 `<img src="${item.thumbnail}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />` :
                 `<div class="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center"><i data-lucide="image" class="text-gray-400 w-12 h-12"></i></div>`;
