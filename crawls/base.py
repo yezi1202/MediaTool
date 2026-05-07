@@ -93,7 +93,7 @@ class BaseCrawler:
                     return json.loads(match.group())
                 except json.JSONDecodeError as e:
                     # logger.error("解析 {0} 接口 JSON 失败： {1}".format(response.url, e))
-                    raise ResponseError("解析JSON数据失败")
+                    raise ResponseError("Không thể chuyển sang json")
 
         else:
             # if isinstance(response, Response):
@@ -103,7 +103,7 @@ class BaseCrawler:
             # else:
             #     logger.error("无效响应类型。响应类型: {0}".format(type(response)))
 
-            raise ResponseError("获取数据失败")
+            raise ResponseError("không lấy được số liệu")
 
     async def get_fetch_data(self, url: str):
 
@@ -111,7 +111,7 @@ class BaseCrawler:
             try:
                 response = await self.aclient.get(url, follow_redirects=True)
                 if not response.text.strip() or not response.content:
-                    error_message = "第 {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
+                    error_message = "lần {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
                                                                                          response.status_code,
                                                                                          response.url)
 
@@ -119,7 +119,7 @@ class BaseCrawler:
 
                     if attempt == self._max_retries - 1:
                         raise RetryExhaustedError(
-                            "获取端点数据失败, 次数达到上限"
+                            "Không thể lấy được dữ liệu"
                         )
 
                     await asyncio.sleep(self._timeout)
@@ -150,7 +150,7 @@ class BaseCrawler:
                     follow_redirects=True
                 )
                 if not response.text.strip() or not response.content:
-                    error_message = "第 {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
+                    error_message = "lần {0} 次响应内容为空, 状态码: {1}, URL:{2}".format(attempt + 1,
                                                                                          response.status_code,
                                                                                          response.url)
 
@@ -158,7 +158,7 @@ class BaseCrawler:
 
                     if attempt == self._max_retries - 1:
                         raise RetryExhaustedError(
-                            "获取端点数据失败, 次数达到上限"
+                            "Không thể lấy được dữ liệu"
                         )
 
                     await asyncio.sleep(self._timeout)
@@ -170,7 +170,7 @@ class BaseCrawler:
 
             except httpx.RequestError:
                 raise ConnectionError(
-                    "连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}".format(url, self.proxies,
+                    "Liên kết thất bai：{0} 代理：{1} 类名：{2}".format(url, self.proxies,
                                                                                    self.__class__.__name__)
                 )
 
@@ -189,7 +189,7 @@ class BaseCrawler:
             return response
 
         except httpx.RequestError:
-            raise ConnectionError("连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}".format(
+            raise ConnectionError("Liên kết thất bai：{0} 代理：{1} 类名：{2}".format(
                 url, self.proxies, self.__class__.__name__
             )
             )
@@ -210,7 +210,7 @@ class BaseCrawler:
             #     http_error, url, attempt
             # )
             # )
-            raise ResponseError(f"处理HTTP错误时遇到意外情况: {http_error}")
+            raise ResponseError(f"Xử lý HTTP lỗi: {http_error}")
 
         if status_code == 302:
             pass
@@ -229,7 +229,7 @@ class BaseCrawler:
             #     status_code, url, attempt
             # )
             # )
-            raise ResponseError(f"HTTP状态错误: {status_code}")
+            raise ResponseError(f"HTTP lỗi: {status_code}")
 
     async def close(self):
         await self.aclient.aclose()
