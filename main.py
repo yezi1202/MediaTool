@@ -1,71 +1,46 @@
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
-import threading
-import traceback
 import asyncio
 import json
-import re
+import traceback
 from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
 from crawls.domains.douyin import Douyin
 from crawls.domains.tiktok import TikTok
 from crawls.domains.bilibili import Bilibili
 from config.config import Config
 
-app = Flask(__name__, template_folder='templates', static_folder='static')
-app.config['SECRET_KEY'] = 'media_tool_trip_secret_key_2024'
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    async_mode='threading',
-    ping_timeout=60,
-    ping_interval=25,
-    max_http_buffer_size=50 * 1024 * 1024
-)
+app = FastAPI()
 
-connected_clients = {}
+# ── Static & templates ────────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).parent
 
+static_dir = BASE_DIR / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def detect_platform(url: str) -> str:
-    """Detect platform from URL."""
     url_lower = url.lower()
     if "tiktok" in url_lower:
         return "TIKTOK"
     elif "bilibili" in url_lower:
         return "BILIBILI"
+    elif "facebook" in url_lower or "fb.watch" in url_lower:
+        return "FACEBOOK"
     else:
         return "DOUYIN"
 
 
-async def extract_video_data(url: str, platform: str) -> dict:
-    """Extract video data from URL based on platform."""
-    try:
-        if platform == "DOUYIN":
-            douyin = Douyin()
-            data = await douyin.get_media_data(url)
-            return format_response_data(data, platform, url)
-        elif platform == "TIKTOK":
-            tiktok = TikTok()
-            data = await tiktok.get_media_data(url)
-            return format_response_data(data, platform, url)
-        elif platform == "BILIBILI":
-            bilibili = Bilibili()
-            data = await bilibili.get_media_data(url)
-            return format_response_data(data, platform, url)
-        else:
-            return {"error": "Platform không được hỗ trợ", "url": url, "platform": platform}
-    except Exception as e:
-        return {
-            "error": f"Lỗi khi trích xuất: {str(e)}",
-            "platform": platform,
-            "url": url,
-        }
-
-
 def _safe_url(obj, fallback: str = "") -> str:
-    """
-    Safely extract first URL from a url_list object.
-    Handles both dict {"url_list": [...]} and plain string.
-    """
     if not obj:
         return fallback
     if isinstance(obj, str):
@@ -77,15 +52,10 @@ def _safe_url(obj, fallback: str = "") -> str:
     return fallback
 
 
-def _safe_music(music_obj: dict) -> dict:
-    """
-    Normalize music object to a frontend-friendly dict.
-    Returns: { title, author, play_url, cover_url } or None
-    """
+def _safe_music(music_obj: dict) -> dict | None:
     if not music_obj or not isinstance(music_obj, dict):
         return None
 
-    # play_url can be a dict with url_list or a plain string
     raw_play = music_obj.get("play_url") or {}
     if isinstance(raw_play, dict):
         play_url = (raw_play.get("url_list") or [None])[0] or ""
@@ -95,7 +65,6 @@ def _safe_music(music_obj: dict) -> dict:
     if not play_url:
         return None
 
-    # Cover image
     cover_raw = music_obj.get("cover_large") or music_obj.get("cover_medium") or {}
     cover_url = _safe_url(cover_raw)
 
@@ -108,19 +77,7 @@ def _safe_music(music_obj: dict) -> dict:
 
 
 def format_response_data(data: dict, platform: str, original_url: str) -> dict:
-    """
-    Map raw crawler output → unified frontend schema.
-
-    Frontend expects:
-        id, platform, url, videoId, type, description,
-        author, authorUid, authorSecUid, authorProfileUrl,
-        avatar, thumbnail, timestamp,
-        links { video, download },
-        api_data { image_data | video_data },   ← full data for gallery
-        music { title, author, play_url, cover_url }
-    """
     try:
-        # ── Author ──────────────────────────────────────────────────────────
         author_info    = data.get("author") or {}
         author_name    = author_info.get("nickname") or author_info.get("unique_id") or "unknown"
         author_uid     = str(author_info.get("uid") or author_info.get("id") or "")
@@ -129,16 +86,13 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
 
         if platform == "DOUYIN":
             author_profile_url = (
-                f"https://www.douyin.com/user/{author_sec_uid}"
-                if author_sec_uid else ""
+                f"https://www.douyin.com/user/{author_sec_uid}" if author_sec_uid else ""
             )
         else:
             author_profile_url = (
-                f"https://www.tiktok.com/@{unique_id}"
-                if unique_id else ""
+                f"https://www.tiktok.com/@{unique_id}" if unique_id else ""
             )
 
-        # ── Avatar ───────────────────────────────────────────────────────────
         avatar_url = (
             _safe_url(author_info.get("avatar_thumb"))
             or _safe_url(author_info.get("avatar_medium"))
@@ -146,7 +100,6 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
             or _safe_url(author_info.get("avatar_large"))
         )
 
-        # ── Thumbnail / Cover ────────────────────────────────────────────────
         cover_data    = data.get("cover_data") or {}
         thumbnail_url = (
             _safe_url(cover_data.get("origin_cover"))
@@ -154,41 +107,22 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
             or _safe_url(cover_data.get("dynamic_cover"))
         )
 
-        # ── Media type & api_data ─────────────────────────────────────────────
         api_data_raw = data.get("api_data") or {}
         media_type   = data.get("type", "video")
 
         if media_type == "video":
             video_data   = api_data_raw.get("video_data") or {}
-            no_wm_url    = (
-                video_data.get("nwm_video_url_HQ")
-                or video_data.get("nwm_video_url")
-                or ""
-            )
-            wm_url       = (
-                video_data.get("wm_video_url_HQ")
-                or video_data.get("wm_video_url")
-                or ""
-            )
+            no_wm_url    = video_data.get("nwm_video_url_HQ") or video_data.get("nwm_video_url") or ""
+            wm_url       = video_data.get("wm_video_url_HQ") or video_data.get("wm_video_url") or ""
             download_url = no_wm_url or wm_url
             stream_url   = no_wm_url or wm_url
-
-            # api_data forwarded as-is (no image list needed)
-            api_data_out = {
-                "video_data": video_data
-            }
-
+            api_data_out = {"video_data": video_data}
         else:
-            # ── IMAGE: forward full lists to frontend ──────────────────────
             image_data   = api_data_raw.get("image_data") or {}
             no_wm_list   = image_data.get("no_watermark_image_list") or []
             wm_list      = image_data.get("watermark_image_list")    or []
-
-            # links.download = first image (for history panel fallback)
             download_url = no_wm_list[0] if no_wm_list else (wm_list[0] if wm_list else "")
             stream_url   = download_url
-
-            # Pass full lists so gallery can render all thumbnails
             api_data_out = {
                 "image_data": {
                     "no_watermark_image_list": no_wm_list,
@@ -196,11 +130,9 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
                 }
             }
 
-        # ── Music ─────────────────────────────────────────────────────────────
         music_out = _safe_music(data.get("music"))
+        video_id  = str(data.get("video_id") or "unknown")
 
-        # ── Build response ────────────────────────────────────────────────────
-        video_id = str(data.get("video_id") or "unknown")
         return {
             "id":               f"result-{video_id}-{int(datetime.now().timestamp() * 1000)}",
             "platform":         platform,
@@ -208,12 +140,10 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
             "videoId":          video_id,
             "type":             media_type,
             "description":      data.get("desc") or "",
-            # author
             "author":           author_name,
             "authorUid":        author_uid,
             "authorSecUid":     author_sec_uid,
             "authorProfileUrl": author_profile_url,
-            # media
             "avatar":           avatar_url,
             "thumbnail":        thumbnail_url,
             "timestamp":        datetime.now().strftime("%H:%M"),
@@ -221,11 +151,9 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
                 "video":    stream_url,
                 "download": download_url,
             },
-            # full api_data for gallery rendering on frontend
             "api_data": api_data_out,
-            # music info (None if not available)
-            "music": music_out,
-            "status": "completed",
+            "music":    music_out,
+            "status":   "completed",
         }
 
     except Exception as e:
@@ -236,104 +164,123 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
         }
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-@app.route("/api/update-cookies", methods=["GET"])
-def update_cookies():
-    """Update cookies for a domain at runtime."""
+async def extract_video_data(url: str, platform: str) -> dict:
     try:
-        domain  = request.args.get("domain", "").lower()
-        cookies = request.args.get("cookies", "")
-        if not domain or not cookies:
-            return jsonify({"success": False, "error": "Thiếu domain hoặc cookies"}), 400
-        result = Config().update_cookies(domain, cookies)
-        if result:
-            return jsonify({"success": True, "message": f"Cập nhật cookies cho {domain} thành công"})
-        return jsonify({"success": False, "error": f"Domain {domain} không tồn tại"}), 400
+        if platform == "DOUYIN":
+            data = await Douyin().get_media_data(url)
+        elif platform == "TIKTOK":
+            data = await TikTok().get_media_data(url)
+        elif platform == "BILIBILI":
+            data = await Bilibili().get_media_data(url)
+        else:
+            return {"error": "Platform không được hỗ trợ", "url": url, "platform": platform}
+        return format_response_data(data, platform, url)
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return {"error": f"Lỗi khi trích xuất: {str(e)}", "platform": platform, "url": url}
 
 
-# ── SocketIO events ───────────────────────────────────────────────────────────
+# ── HTTP routes ───────────────────────────────────────────────────────────────
 
-@socketio.on("connect")
-def handle_connect():
-    client_id = request.sid
-    connected_clients[client_id] = True
-    emit("connection_response", {"status": "connected", "client_id": client_id})
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-@socketio.on("disconnect")
-def handle_disconnect():
-    client_id = request.sid
-    connected_clients.pop(client_id, None)
+@app.get("/api/update-cookies")
+async def update_cookies(domain: str = "", cookies: str = ""):
+    if not domain or not cookies:
+        return JSONResponse({"success": False, "error": "Thiếu domain hoặc cookies"}, status_code=400)
+    try:
+        result = Config().update_cookies(domain.lower(), cookies)
+        if result:
+            return JSONResponse({"success": True, "message": f"Cập nhật cookies cho {domain} thành công"})
+        return JSONResponse({"success": False, "error": f"Domain {domain} không tồn tại"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-@socketio.on("extract_urls")
-def handle_extract_urls(data):
-    client_id = request.sid
-    urls = data.get("urls") or []
+# ── WebSocket ─────────────────────────────────────────────────────────────────
 
-    if not urls:
-        socketio.emit("extraction_error", {"error": "Không có URL để xử lý"}, room=client_id)
-        return
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
 
-    socketio.emit(
-        "extraction_start",
-        {"total": len(urls), "message": f"Đang xử lý {len(urls)} URL..."},
-        room=client_id,
-    )
+    async def send(event: str, data: dict):
+        """Send a typed JSON message to the client."""
+        await ws.send_text(json.dumps({"event": event, **data}))
 
-    def process_urls(cid: str, url_list: list):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            for idx, raw_url in enumerate(url_list):
-                url      = str(raw_url).strip()
-                platform = detect_platform(url)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await send("error", {"error": "Invalid JSON"})
+                continue
 
-                socketio.emit(
-                    "extraction_pending",
-                    {"index": idx, "total": len(url_list), "url": url, "platform": platform},
-                    room=cid,
-                )
+            event = msg.get("event")
 
-                try:
-                    result = loop.run_until_complete(extract_video_data(url, platform))
-                    status = "error" if result.get("error") else "success"
-                    socketio.emit(
-                        "extraction_result",
-                        {"index": idx, "total": len(url_list), "status": status, "result": result},
-                        room=cid,
-                    )
-                except Exception as exc:
-                    traceback.print_exc()
-                    socketio.emit(
-                        "extraction_result",
-                        {
-                            "index": idx,
-                            "total": len(url_list),
+            if event == "ping":
+                await send("pong", {})
+
+            elif event == "extract_urls":
+                urls = msg.get("urls") or []
+                if not urls:
+                    await send("extraction_error", {"error": "Không có URL để xử lý"})
+                    continue
+
+                await send("extraction_start", {
+                    "total":   len(urls),
+                    "message": f"Đang xử lý {len(urls)} URL...",
+                })
+
+                for idx, raw_url in enumerate(urls):
+                    url      = str(raw_url).strip()
+                    platform = detect_platform(url)
+
+                    await send("extraction_pending", {
+                        "index":    idx,
+                        "total":    len(urls),
+                        "url":      url,
+                        "platform": platform,
+                    })
+
+                    try:
+                        result = await extract_video_data(url, platform)
+                        status = "error" if result.get("error") else "success"
+                        await send("extraction_result", {
+                            "index":  idx,
+                            "total":  len(urls),
+                            "status": status,
+                            "result": result,
+                        })
+                    except Exception as exc:
+                        traceback.print_exc()
+                        await send("extraction_result", {
+                            "index":  idx,
+                            "total":  len(urls),
                             "status": "error",
                             "result": {"url": url, "platform": platform, "error": str(exc)},
-                        },
-                        room=cid,
-                    )
+                        })
 
-        except Exception as exc:
-            traceback.print_exc()
-            socketio.emit("extraction_error", {"error": str(exc)}, room=cid)
-        finally:
-            loop.close()
-            socketio.emit("extraction_complete", {"message": "Hoàn thành trích xuất"}, room=cid)
+                await send("extraction_complete", {"message": "Hoàn thành trích xuất"})
 
-    threading.Thread(target=process_urls, args=(client_id, urls), daemon=True).start()
+            else:
+                await send("error", {"error": f"Unknown event: {event}"})
 
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            await send("extraction_error", {"error": str(e)})
+        except Exception:
+            pass
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import uvicorn
     print("🌸 MediaTool Trip — Starting on http://localhost:5000")
-    socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
