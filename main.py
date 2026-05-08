@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from crawls.domains.douyin import Douyin
 from crawls.domains.tiktok import TikTok
+from crawls.domains.bilibili import Bilibili
 from config.config import Config
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -49,7 +50,9 @@ async def extract_video_data(url: str, platform: str) -> dict:
             data = await tiktok.get_media_data(url)
             return format_response_data(data, platform, url)
         elif platform == "BILIBILI":
-            return {"error": "Bilibili chưa được hỗ trợ", "url": url, "platform": platform}
+            bilibili = Bilibili()
+            data = await bilibili.get_media_data(url)
+            return format_response_data(data, platform, url)
         else:
             return {"error": "Platform không được hỗ trợ", "url": url, "platform": platform}
     except Exception as e:

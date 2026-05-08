@@ -130,7 +130,7 @@ class BaseCrawler:
                 return response
 
             except httpx.RequestError:
-                raise ConnectionError("连接端点失败，检查网络环境或代理：{0} 代理：{1} 类名：{2}"
+                raise ConnectionError("Liên kết thất bại, vui lòng kiểm tra lại kết nối mạng：{0} 代理：{1} 类名：{2}"
                                          .format(url, self.proxies, self.__class__.__name__)
                                          )
 
