@@ -32,8 +32,6 @@ def detect_platform(url: str) -> str:
         return "TIKTOK"
     elif "bilibili" in url_lower:
         return "BILIBILI"
-    elif "facebook" in url_lower or "fb.watch" in url_lower:
-        return "FACEBOOK"
     else:
         return "DOUYIN"
 
@@ -65,7 +63,7 @@ async def extract_video_data(url: str, platform: str) -> dict:
 
 def _safe_url(obj, fallback: str = "") -> str:
     """
-    Safely extract first URL from a Douyin url_list object.
+    Safely extract first URL from a url_list object.
     Handles both dict {"url_list": [...]} and plain string.
     """
     if not obj:
@@ -79,25 +77,56 @@ def _safe_url(obj, fallback: str = "") -> str:
     return fallback
 
 
+def _safe_music(music_obj: dict) -> dict:
+    """
+    Normalize music object to a frontend-friendly dict.
+    Returns: { title, author, play_url, cover_url } or None
+    """
+    if not music_obj or not isinstance(music_obj, dict):
+        return None
+
+    # play_url can be a dict with url_list or a plain string
+    raw_play = music_obj.get("play_url") or {}
+    if isinstance(raw_play, dict):
+        play_url = (raw_play.get("url_list") or [None])[0] or ""
+    else:
+        play_url = str(raw_play)
+
+    if not play_url:
+        return None
+
+    # Cover image
+    cover_raw = music_obj.get("cover_large") or music_obj.get("cover_medium") or {}
+    cover_url = _safe_url(cover_raw)
+
+    return {
+        "title":     music_obj.get("title") or "Nhạc nền",
+        "author":    music_obj.get("author") or "",
+        "play_url":  play_url,
+        "cover_url": cover_url,
+    }
+
+
 def format_response_data(data: dict, platform: str, original_url: str) -> dict:
     """
     Map raw crawler output → unified frontend schema.
 
     Frontend expects:
         id, platform, url, videoId, type, description,
-        author (display name), authorUid, authorSecUid,
-        authorProfileUrl, avatar, thumbnail,
-        timestamp, links{video, download}
+        author, authorUid, authorSecUid, authorProfileUrl,
+        avatar, thumbnail, timestamp,
+        links { video, download },
+        api_data { image_data | video_data },   ← full data for gallery
+        music { title, author, play_url, cover_url }
     """
     try:
         # ── Author ──────────────────────────────────────────────────────────
-        author_info = data.get("author") or {}
-        author_name   = author_info.get("nickname") or author_info.get("unique_id") or "unknown"
-        author_uid    = str(author_info.get("uid") or author_info.get("id") or "")
+        author_info    = data.get("author") or {}
+        author_name    = author_info.get("nickname") or author_info.get("unique_id") or "unknown"
+        author_uid     = str(author_info.get("uid") or author_info.get("id") or "")
         author_sec_uid = author_info.get("sec_uid") or ""
         unique_id      = author_info.get("unique_id") or author_info.get("short_id") or author_uid
 
-        # Douyin profile URL uses sec_uid; TikTok uses @uniqueId
         if platform == "DOUYIN":
             author_profile_url = (
                 f"https://www.douyin.com/user/{author_sec_uid}"
@@ -110,7 +139,6 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
             )
 
         # ── Avatar ───────────────────────────────────────────────────────────
-        # Douyin: author.avatar_thumb.url_list[0]  (avatar_larger may not exist)
         avatar_url = (
             _safe_url(author_info.get("avatar_thumb"))
             or _safe_url(author_info.get("avatar_medium"))
@@ -119,71 +147,92 @@ def format_response_data(data: dict, platform: str, original_url: str) -> dict:
         )
 
         # ── Thumbnail / Cover ────────────────────────────────────────────────
-        # Douyin cover_data carries dicts {url_list:[...]}, not plain strings
-        cover_data = data.get("cover_data") or {}
-
+        cover_data    = data.get("cover_data") or {}
         thumbnail_url = (
             _safe_url(cover_data.get("origin_cover"))
             or _safe_url(cover_data.get("cover"))
             or _safe_url(cover_data.get("dynamic_cover"))
         )
 
-        # ── Download / Stream URLs ────────────────────────────────────────────
-        api_data   = data.get("api_data") or {}
-        media_type = data.get("type", "video")
+        # ── Media type & api_data ─────────────────────────────────────────────
+        api_data_raw = data.get("api_data") or {}
+        media_type   = data.get("type", "video")
 
         if media_type == "video":
-            video_data = api_data.get("video_data") or {}
-            # nwm = no-watermark; prefer HQ
-            no_wm_url = (
+            video_data   = api_data_raw.get("video_data") or {}
+            no_wm_url    = (
                 video_data.get("nwm_video_url_HQ")
                 or video_data.get("nwm_video_url")
                 or ""
             )
-            wm_url = (
+            wm_url       = (
                 video_data.get("wm_video_url_HQ")
                 or video_data.get("wm_video_url")
                 or ""
             )
             download_url = no_wm_url or wm_url
             stream_url   = no_wm_url or wm_url
+
+            # api_data forwarded as-is (no image list needed)
+            api_data_out = {
+                "video_data": video_data
+            }
+
         else:
-            # image / slideshow
-            image_data = api_data.get("image_data") or {}
-            no_wm_list = image_data.get("no_watermark_image_list") or []
-            download_url = no_wm_list[0] if no_wm_list else ""
+            # ── IMAGE: forward full lists to frontend ──────────────────────
+            image_data   = api_data_raw.get("image_data") or {}
+            no_wm_list   = image_data.get("no_watermark_image_list") or []
+            wm_list      = image_data.get("watermark_image_list")    or []
+
+            # links.download = first image (for history panel fallback)
+            download_url = no_wm_list[0] if no_wm_list else (wm_list[0] if wm_list else "")
             stream_url   = download_url
+
+            # Pass full lists so gallery can render all thumbnails
+            api_data_out = {
+                "image_data": {
+                    "no_watermark_image_list": no_wm_list,
+                    "watermark_image_list":    wm_list,
+                }
+            }
+
+        # ── Music ─────────────────────────────────────────────────────────────
+        music_out = _safe_music(data.get("music"))
 
         # ── Build response ────────────────────────────────────────────────────
         video_id = str(data.get("video_id") or "unknown")
         return {
-            "id": f"result-{video_id}-{int(datetime.now().timestamp() * 1000)}",
-            "platform": platform,
-            "url": original_url,
-            "videoId": video_id,
-            "type": media_type,
-            "description": data.get("desc") or "",
-            # ── author fields ──
-            "author": author_name,
-            "authorUid": author_uid,
-            "authorSecUid": author_sec_uid,
+            "id":               f"result-{video_id}-{int(datetime.now().timestamp() * 1000)}",
+            "platform":         platform,
+            "url":              original_url,
+            "videoId":          video_id,
+            "type":             media_type,
+            "description":      data.get("desc") or "",
+            # author
+            "author":           author_name,
+            "authorUid":        author_uid,
+            "authorSecUid":     author_sec_uid,
             "authorProfileUrl": author_profile_url,
-            # ── media fields ──
-            "avatar": avatar_url,
-            "thumbnail": thumbnail_url,
-            "timestamp": datetime.now().strftime("%H:%M"),
+            # media
+            "avatar":           avatar_url,
+            "thumbnail":        thumbnail_url,
+            "timestamp":        datetime.now().strftime("%H:%M"),
             "links": {
-                "video": stream_url,
+                "video":    stream_url,
                 "download": download_url,
             },
+            # full api_data for gallery rendering on frontend
+            "api_data": api_data_out,
+            # music info (None if not available)
+            "music": music_out,
             "status": "completed",
         }
 
     except Exception as e:
         return {
-            "error": f"Lỗi định dạng dữ liệu: {str(e)}",
+            "error":    f"Lỗi định dạng dữ liệu: {str(e)}",
             "platform": platform,
-            "url": original_url,
+            "url":      original_url,
         }
 
 
