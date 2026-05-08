@@ -3,5 +3,4 @@ gmssl==3.2.2
 httpx==0.28.1
 pydantic==2.13.4
 PyYAML==6.0.1
-PyYAML==6.0.3
 uvicorn==0.46.0
