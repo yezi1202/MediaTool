@@ -12,6 +12,7 @@ from utils.exceptions import (
     URLError, ExtractError, ConnectionError,
     TimeoutError,
 )
+from crawls.domains import bilibili_wrid
 
 
 class Bilibili:
@@ -179,28 +180,8 @@ class WridManager:
         wts = params["wts"]
         encode_query = await cls.get_encode_query(params)
         # 获取w_rid参数
-        w_rid = await cls.get_wrid(e=encode_query)
+        w_rid = await bilibili_wrid.get_wrid(e=encode_query)
         params["wts"] = wts
         params["w_rid"] = w_rid
         return "&".join(f"{k}={v}" for k, v in params.items())
     
-    @staticmethod
-    async def tbytes_to_hex(t):
-        e = []
-        for n in range(len(t)):
-            e.append(hex(t[n] >> 4)[2:])
-            e.append(hex(t[n] & 15)[2:])
-        return ''.join(e)
-
-    @classmethod
-    async def get_wrid(cls, e):
-        n = None
-        i = await cls.twords_to_bytes(cls.o(e, n))
-        return await cls.tbytes_to_hex(i)
-
-    @staticmethod
-    async def twords_to_bytes(t):
-        e = []
-        for n in range(0, 32 * len(t), 8):
-            e.append((t[n >> 5] >> (24 - n % 32)) & 255)
-        return e
