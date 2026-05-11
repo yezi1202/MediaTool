@@ -594,36 +594,48 @@ function toggleAudio(galleryId) {
 async function triggerDownload(url, filename, platform) {
     if (!url) return;
     filename = filename || 'media.mp4';
-    platform = platform;
+    const MAX_SIZE_MB = 100; // Cấu hình giới hạn dung lượng (MB)
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
     try {
-        const res  = await fetch(`/api/resolve?url=${encodeURIComponent(url)}&platform=${encodeURIComponent(platform)}`);
+        const res = await fetch(`/api/resolve?url=${encodeURIComponent(url)}&platform=${encodeURIComponent(platform)}`);
         const data = await res.json();
 
         if (data.error) throw new Error(data.error);
 
+        // 1. Fetch file nhưng chỉ lấy thông tin Header trước
         const fileRes = await fetch(data.url);
-        const blob = await fileRes.blob();
+        
+        // 2. Kiểm tra dung lượng từ Header Content-Length
+        const contentLength = fileRes.headers.get('Content-Length');
+        
+        if (contentLength && parseInt(contentLength) > MAX_SIZE_BYTES) {
+            console.warn('File quá nặng, chuyển sang mở tab mới để tải.');
+            window.open(data.url, '_blank');
+            return; // Thoát hàm, không chạy lệnh .blob() phía dưới
+        }
 
-        // tạo blob url
+        // 3. Nếu file nhẹ thì tiếp tục xử lý Blob (Tốn RAM)
+        const blob = await fileRes.blob();
         const blobUrl = URL.createObjectURL(blob);
 
-        // download
         const a = document.createElement('a');
         a.href = blobUrl;
-        a.download = filename || 'video.mp4';
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
 
-        // cleanup
-        // URL.revokeObjectURL(blobUrl);
+        // Nên revoke sau 1 khoảng thời gian ngắn để tránh lỗi trên 1 số trình duyệt
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
 
     } catch (err) {
         console.error('Download failed:', err);
+        // Fallback: nếu lỗi fetch thì mở trực tiếp url gốc hoặc url đã resolve
         window.open(url, '_blank');
     }
 }
+
 
 /**
  * Download all images in a list sequentially with a small delay.
