@@ -8,6 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import httpx
 
 from crawls.domains.douyin import Douyin
 from crawls.domains.tiktok import TikTok
@@ -34,8 +35,6 @@ def detect_platform(url: str) -> str:
         return "TIKTOK"
     elif "bilibili" in url_lower:
         return "BILIBILI"
-    elif "facebook" in url_lower or "fb.watch" in url_lower:
-        return "FACEBOOK"
     else:
         return "DOUYIN"
 
@@ -198,7 +197,30 @@ async def update_cookies(domain: str = "", cookies: str = ""):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+@app.get("/api/resolve")
+async def resolve_media_url(url: str, platform: str):
+    if not url:
+        return JSONResponse({"error": "Missing url"}, status_code=400)
+    cfg_headers = Config().config[platform.lower()]["headers"] or {}
+    if platform.upper() == "BILIBILI":
+        resolve_headers = {
+            "User-Agent": cfg_headers["user_agent"],
+            "Referer":    cfg_headers["referer"],
+            "origin":     cfg_headers["origin"],
+        }
+    else:
+        resolve_headers = {
+            "User-Agent": cfg_headers["user_agent"],
+            "Referer":    cfg_headers["referer"],
+        }
 
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            resp = await client.head(url, headers=resolve_headers)
+            final_url = str(resp.url)
+        return JSONResponse({"url": final_url})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws")

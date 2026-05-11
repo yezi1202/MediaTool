@@ -296,7 +296,7 @@
                     <textarea
                         id="input-text"
                         oninput="updateLinkCount()"
-                        placeholder="Dán link video TikTok, Douyin, Facebook... vào đây (hỗ trợ nhiều link)"
+                        placeholder="Dán link video TikTok, Douyin, BILIBILI vào đây"
                         class="w-full h-24 p-5 text-purple-700 font-bold bg-white/40 rounded-[1.5rem] focus:outline-none resize-none custom-scroll text-lg border-2 border-white focus:border-[#a1c4fd] transition-all shadow-inner"
                     ></textarea>
                     <div class="flex justify-between items-center mt-4">
@@ -353,7 +353,7 @@
                     <button onclick="setTab('ALL')"      id="tab-ALL"      class="tab-btn px-4 py-2 rounded-xl text-[10px] font-black tracking-widest filter-tag filter-tag-active">TẤT CẢ</button>
                     <button onclick="setTab('DOUYIN')"   id="tab-DOUYIN"   class="tab-btn px-4 py-2 rounded-xl text-[10px] font-black tracking-widest filter-tag">DOUYIN</button>
                     <button onclick="setTab('TIKTOK')"   id="tab-TIKTOK"   class="tab-btn px-4 py-2 rounded-xl text-[10px] font-black tracking-widest filter-tag">TIKTOK</button>
-                    <button onclick="setTab('FACEBOOK')" id="tab-FACEBOOK" class="tab-btn px-4 py-2 rounded-xl text-[10px] font-black tracking-widest filter-tag">FACEBOOK</button>
+                    <button onclick="setTab('BILIBILI')" id="tab-BILIBILI" class="tab-btn px-4 py-2 rounded-xl text-[10px] font-black tracking-widest filter-tag">BILIBILI</button>
                 </div>
 
                 <!-- Search -->
@@ -591,28 +591,37 @@ function toggleAudio(galleryId) {
     };
 }
 
-async function triggerDownload(url, filename) {
+async function triggerDownload(url, filename, platform) {
     if (!url) return;
-    filename = filename || url.split('/').pop().split('?')[0] || 'media.mp4';
+    filename = filename || 'media.mp4';
+    platform = platform;
+
     try {
-        const res  = await fetch(url, { mode: 'cors' });
-        const blob = await res.blob();
-        const burl = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = burl;
-        a.download = filename;
+        const res  = await fetch(`/api/resolve?url=${encodeURIComponent(url)}&platform=${encodeURIComponent(platform)}`);
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        const fileRes = await fetch(data.url);
+        const blob = await fileRes.blob();
+
+        // tạo blob url
+        const blobUrl = URL.createObjectURL(blob);
+
+        // download
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename || 'video.mp4';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(burl), 10000);
-    } catch (_) {
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = filename;
-        a.target   = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+
+        // cleanup
+        // URL.revokeObjectURL(blobUrl);
+
+    } catch (err) {
+        console.error('Download failed:', err);
+        window.open(url, '_blank');
     }
 }
 
@@ -620,13 +629,17 @@ async function triggerDownload(url, filename) {
  * Download all images in a list sequentially with a small delay.
  * @param {string[]} urls - Array of image URLs
  * @param {string} prefix - Filename prefix (e.g. author name)
+ * @param {string} platform - The platform (e.g. douyin, tiktok)
  */
-async function downloadAllImages(urls, prefix) {
+async function downloadAllImages(el, prefix,platform) {
+    const urls = JSON.parse(el.dataset.images)
     if (!urls || !urls.length) return;
+    el.disabled = true;
     for (let i = 0; i < urls.length; i++) {
-        await triggerDownload(urls[i], `${prefix || 'image'}_${i + 1}.jpg`);
+        await triggerDownload(urls[i], `${prefix || 'image'}_${i + 1}.jpg`,platform);
         await new Promise(r => setTimeout(r, 400));
     }
+     el.disabled = false;
 }
 
 /**
@@ -827,7 +840,7 @@ function videoResultPanel(item) {
             </div>
 
             ${canDownload ? `
-            <button onclick="triggerDownload('${escHtml(downloadUrl)}')"
+            <button onclick="triggerDownload('${escHtml(downloadUrl)}', 'video.mp4','${escHtml(item.platform.toLowerCase())}')"
                     class="w-full bg-[#a1c4fd] hover:bg-[#8ab4f8] py-4 rounded-full font-black text-sm text-white shadow-md flex items-center justify-center gap-2 uppercase tracking-widest transition-all hover:-translate-y-0.5 active:scale-95">
                 <i data-lucide="download" class="w-4 h-4 stroke-[3]"></i> Tải Video
             </button>` : `
@@ -898,7 +911,7 @@ function imageResultPanel(item) {
                 <div class="img-download-overlay">
                     <button id="${galleryId}-dl-single"
                             data-url="${escHtml(firstImg)}"
-                            onclick="triggerDownload(this.getAttribute('data-url'), 'image_1.jpg')"
+                            onclick="triggerDownload(this.getAttribute('data-url'), 'image_1.jpg','${escHtml(item.platform.toLowerCase())}')"
                             class="bg-white/90 hover:bg-white text-[#5c4d7d] px-5 py-3 rounded-2xl font-black text-xs flex items-center gap-2 shadow-lg transition-all active:scale-95">
                         <i data-lucide="download" class="w-4 h-4 stroke-[3]"></i> Tải ảnh này
                     </button>
@@ -967,7 +980,7 @@ function imageResultPanel(item) {
                 </button>
 
                 <!-- Download button -->
-                <button onclick="triggerDownload('${escHtml(musicUrl)}', '${escHtml(musicName)}.mp3')"
+                <button onclick="triggerDownload('${escHtml(musicUrl)}', '${escHtml(musicName)}.mp3','${escHtml(item.platform.toLowerCase())}')"
                         class="p-2.5 rounded-xl bg-white border-2 border-transparent text-purple-400 hover:bg-purple-50 hover:text-purple-600 shadow-sm transition-all shrink-0">
                     <i data-lucide="download" class="w-4 h-4 stroke-[2.5]"></i>
                 </button>
@@ -980,9 +993,11 @@ function imageResultPanel(item) {
 
             <!-- Download all button -->
             ${allImages.length ? `
-            <button onclick="downloadAllImages(window['${galleryId}_urls'], '${escHtml(item.author || 'image')}')"
-                    class="w-full bg-gradient-to-r from-pink-400 to-purple-400 hover:from-pink-500 hover:to-purple-500 py-4 rounded-full font-black text-sm text-white shadow-md flex items-center justify-center gap-2 uppercase tracking-widest transition-all hover:-translate-y-0.5 active:scale-95">
-                <i data-lucide="image-down" class="w-4 h-4 stroke-[3]"></i> Tải tất cả ${total} ảnh
+            <button data-images='${urlsJson}'
+                onclick="downloadAllImages(this,'${escHtml(item.author || 'image')}','${escHtml(item.platform.toLowerCase())}')"
+                class="w-full bg-gradient-to-r from-pink-400 to-purple-400 hover:from-pink-500 hover:to-purple-500 text-white py-3 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 uppercase tracking-widest transition-colors shadow-md hover:-translate-y-0.5 active:scale-95">
+                <i data-lucide="image-down" class="w-3.5 h-3.5"></i>
+                Tải tất cả ${total} ảnh
             </button>` : `
             <div class="w-full bg-gray-100 py-4 rounded-full text-center text-sm font-black text-gray-400 uppercase tracking-widest">
                 Không có ảnh để tải
@@ -1147,19 +1162,21 @@ function renderDetail() {
         <div class="bg-purple-50/60 rounded-xl p-2.5 flex items-center gap-2 mb-3 border border-purple-100">
             <i data-lucide="music" class="w-3.5 h-3.5 text-purple-400 shrink-0"></i>
             <span class="text-[10px] font-bold text-purple-600 truncate flex-1">${escHtml(musicName)}</span>
-            <button onclick="triggerDownload('${escHtml(musicUrl)}', '${escHtml(musicName)}.mp3')"
+            <button onclick="triggerDownload('${escHtml(musicUrl)}', '${escHtml(musicName)}.mp3','${escHtml(item.platform.toLowerCase())}')"
                     class="p-1.5 rounded-lg bg-white text-purple-400 hover:bg-purple-50 shrink-0 transition-colors">
                 <i data-lucide="download" class="w-3 h-3"></i>
             </button>
         </div>` : ''}
-        <button onclick="downloadAllImages(${JSON.stringify(allImages)}, '${escHtml(item.author || 'image')}')"
+       <button data-images='${JSON.stringify(allImages).replace(/'/g, '&#39;')}'
+            onclick="downloadAllImages(this,'${escHtml(item.author || 'image')}','${escHtml(item.platform.toLowerCase())}')"
                 class="w-full bg-gradient-to-r from-pink-400 to-purple-400 hover:from-pink-500 hover:to-purple-500 text-white py-3 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 uppercase tracking-widest transition-colors shadow-md hover:-translate-y-0.5 active:scale-95">
-            <i data-lucide="image-down" class="w-3.5 h-3.5"></i> Tải tất cả ${allImages.length} ảnh
+            <i data-lucide="image-down" class="w-3.5 h-3.5"></i>
+            Tải tất cả ${allImages.length} ảnh
         </button>` : downloadUrl ? `
         <div class="space-y-2 mb-4">
             ${linkRow('DOWNLOAD', downloadUrl)}
         </div>
-        <button onclick="triggerDownload('${escHtml(downloadUrl)}')"
+        <button onclick="triggerDownload('${escHtml(downloadUrl)}','','${escHtml(item.platform.toLowerCase())}')"
                 class="w-full bg-[#a1c4fd] hover:bg-[#8ab4f8] text-white py-3 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 uppercase tracking-widest transition-colors shadow-[0_4px_10px_rgba(161,196,253,.4)] hover:-translate-y-0.5 active:scale-95">
             <i data-lucide="download" class="w-3.5 h-3.5"></i> Tải Xuống
         </button>` : '<p class="text-xs text-gray-400 text-center font-bold">Không có link tải</p>'}
