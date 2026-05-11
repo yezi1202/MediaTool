@@ -1,5 +1,7 @@
 import re
 import httpx
+import time
+import hashlib
 from config.config import Config
 from crawls.base import BaseCrawler
 from utils.abogus import ABogus as AB
@@ -67,7 +69,7 @@ class Bilibili:
             cid = detail.get('cid')  # 获取cid
             if cid:
                 # 获取播放链接，cid需要转换为字符串
-                playurl_data = await self.BilibiliWebCrawler.fetch_video_playurl(bv_id, str(cid))
+                playurl_data = await self.fetch_video_playurl(bv_id, str(cid))
                 # 从播放数据中提取URL
                 dash = playurl_data.get('data', {}).get('dash', {})
                 video_list = dash.get('video', [])
@@ -129,3 +131,76 @@ class Bilibili:
             return match.group(1)
         else:
             raise ValueError(f"Không thể lấy được BV_ID từ: {url}")
+    
+    async def fetch_video_playurl(self, bv_id: str, cid: str, qn: str = "64") -> dict:
+        # 获取请求头信息
+        kwargs = self.kwargs
+        # 创建基础爬虫对象
+        base_crawler = BaseCrawler(proxies=kwargs["proxies"], crawler_headers=kwargs["headers"])
+        async with base_crawler as crawler:
+            # 通过模型生成基本请求参数
+            params = PlayUrl(bvid=bv_id, cid=cid, qn=qn)
+            # 创建请求endpoint
+            endpoint = await self.video_playurl_endpoint(params.dict())
+            # 发送请求，获取请求响应结果
+            response = await crawler.fetch_get_json(endpoint)
+        return response
+    
+    async def video_playurl_endpoint(self, params: dict) -> str:
+        # 添加w_rid
+        endpoint = await WridManager.wrid_model_endpoint(params=params)
+        # 拼接成最终结果并返回
+        final_endpoint = "https://api.bilibili.com/x/player/wbi/playurl" + '?' + endpoint
+        return final_endpoint
+    
+class PlayUrl(BaseModel):
+    qn: str
+    fnval: str = '4048'
+    bvid: str
+    cid: str
+    wts: str = str(round(time.time()))
+
+class WridManager:
+    @classmethod
+    async def get_encode_query(cls, params: dict) -> str:
+        params['wts'] = params['wts'] + "ea1db124af3c7062474693fa704f4ff8"
+        params = dict(sorted(params.items()))  # 按照 key 重排参数
+        # 过滤 value 中的 "!'()*" 字符
+        params = {
+            k: ''.join(filter(lambda chr: chr not in "!'()*", str(v)))
+            for k, v
+            in params.items()
+        }
+        query = urlencode(params)  # 序列化参数
+        return query
+
+    @classmethod
+    async def wrid_model_endpoint(cls, params: dict) -> str:
+        wts = params["wts"]
+        encode_query = await cls.get_encode_query(params)
+        # 获取w_rid参数
+        w_rid = await cls.get_wrid(e=encode_query)
+        params["wts"] = wts
+        params["w_rid"] = w_rid
+        return "&".join(f"{k}={v}" for k, v in params.items())
+    
+    @staticmethod
+    async def tbytes_to_hex(t):
+        e = []
+        for n in range(len(t)):
+            e.append(hex(t[n] >> 4)[2:])
+            e.append(hex(t[n] & 15)[2:])
+        return ''.join(e)
+
+    @classmethod
+    async def get_wrid(cls, e):
+        n = None
+        i = await cls.twords_to_bytes(cls.o(e, n))
+        return await cls.tbytes_to_hex(i)
+
+    @staticmethod
+    async def twords_to_bytes(t):
+        e = []
+        for n in range(0, 32 * len(t), 8):
+            e.append((t[n >> 5] >> (24 - n % 32)) & 255)
+        return e
