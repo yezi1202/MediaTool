@@ -1,6 +1,24 @@
-.venv/
+# python
 __pycache__/
-node_modules/
+*.pyc
+*.pyo
+
+# venv
+.venv/
+venv/
+
+# env
 .env
+
+# node
+node_modules/
+
+# build
 dist/
 build/
+
+# vscode
+.vscode/
+
+# logs
+*.log
