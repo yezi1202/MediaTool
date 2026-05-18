@@ -26,7 +26,7 @@ class Bilibili:
                 "User-Agent":      hdr.get("user_agent"),
                 "Referer":         hdr.get("referer"),
                 "Cookie":          hdr.get("cookies"),
-                "origin":         hdr.get("origin_2"),
+                "origin":         hdr.get("origin"),
             },
             "proxies": {
                 "http://":  self.config["proxies"].get("http"),
@@ -60,14 +60,14 @@ class Bilibili:
                 raise ConnectionError(f"Lỗi kết nối: {e}", {"url": url})
 
         # ── Parse response ────────────────────────────────────────────────────
-        detail = resp.get('data', {})
+        data = resp.get('data', {})
 
         aweme_type = 0
         media_type = utils.get_media_type(aweme_type)
-        video_obj  = detail.get("video") or {}
+        video_obj  = data.get("video") or {}
 
         if media_type == "video":
-            cid = detail.get('cid')  # 获取cid
+            cid = data.get('cid')  # 获取cid
             if cid:
                 # 获取播放链接，cid需要转换为字符串
                 playurl_data = await self.fetch_video_playurl(bv_id, str(cid))
@@ -106,15 +106,15 @@ class Bilibili:
             "type":        media_type,
             "platform":    "bilibili",
             "video_id":    bv_id,
-            "desc":        detail.get("title", ""),
-            "create_time": detail.get("pubdate"),
-            "author":      detail.get("owner", {}),
+            "desc":        data.get("title", ""),
+            "create_time": data.get("pubdate"),
+            "author":      data.get("owner", {}),
             "music":       None,
-            "statistics":  detail.get("stat"),
+            "statistics":  data.get("stat"),
             "cover_data": {
-                'cover': detail.get("pic"),  # Bilibili使用pic作为封面
-                'origin_cover': detail.get("pic"),
-                'dynamic_cover': detail.get("pic")
+                'cover': data.get("pic"),  # Bilibili使用pic作为封面
+                'origin_cover': data.get("pic"),
+                'dynamic_cover': data.get("pic")
             },
             "hashtags": None,
             "api_data": api_data,
@@ -180,7 +180,7 @@ class WridManager:
         wts = params["wts"]
         encode_query = await cls.get_encode_query(params)
         # 获取w_rid参数
-        w_rid = await bilibili_wrid.get_wrid(e=encode_query)
+        w_rid = bilibili_wrid.get_wrid(e=encode_query)
         params["wts"] = wts
         params["w_rid"] = w_rid
         return "&".join(f"{k}={v}" for k, v in params.items())

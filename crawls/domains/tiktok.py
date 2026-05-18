@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from tenacity import *
 import re
 import httpx
 from config.config import Config
@@ -26,29 +27,16 @@ class TikTok:
             "headers": {
                 "User-Agent": header_cfg["user_agent"],
                 "Referer": header_cfg["referer"],
-                "Cookie": header_cfg["cookies"]
+                "Cookie": header_cfg["cookies"],
+                "x-ladon": "Hello From Evil0ctal!",
             },
             "proxies": {
                 "http://": self.config["proxies"]["http"], 
                 "https://": self.config["proxies"]["https"]    
             }
         }
-
+    @retry(stop=stop_after_attempt(3),wait=wait_fixed(1))
     async def get_media_data(self, url: str):
-        """
-        Extract media data from TikTok URL
-        
-        Args:
-            url (str): TikTok video URL
-            
-        Returns:
-            dict: Media data
-            
-        Raises:
-            URLError: Invalid URL
-            ExtractError: Extraction failed
-            ConnectionError: Network error
-        """
         if not isinstance(url, str):
             raise URLError("URL phải là một chuỗi", {'url': url})
         
@@ -64,24 +52,20 @@ class TikTok:
 
         async with crawler:
             try:
-                params = Params(itemId=aweme_id)
-                params_str = "&".join([f"{k}={v}" for k, v in params.dict().items()])
-
-                try:
-                    xb_value = XB(user_agent=self.kwargs["headers"]["User-Agent"]).getXBogus(params_str)
-                except Exception as e:
-                    raise ExtractError(f"Lỗi tạo X-Bogus: {str(e)}", {'aweme_id': aweme_id})
+                params = Params(aweme_id=aweme_id)
+                params_str = utils.model_to_query_string(params)
+                endpoint_url = f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/feed/?{params_str}"
                 
-                separator = "&" if "?" in "https://www.tiktok.com/api/item/detail/" else "?"
-                endpoint_url = f"https://www.tiktok.com/api/item/detail/{separator}{params_str}&X-Bogus={xb_value[1]}"
-                data = await crawler.fetch_get_json(endpoint_url)
-                
+                response = await crawler.fetch_get_json(endpoint_url)
+                data = response.get("aweme_list")[0]
+                if data.get("aweme_id") != aweme_id:
+                    raise Exception("作品ID错误/Video ID error")
             except httpx.TimeoutException as e:
                 raise TimeoutError("Yêu cầu bị quá hạn", {'url': endpoint_url})
             except httpx.ConnectError as e:
-                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': url})
+                raise ConnectionError(f"Lỗi kết nối: {str(e)}", {'url': endpoint_url})
             except Exception as e:
-                raise ExtractError(f"Lỗi lấy dữ liệu: {str(e)}", {'url': url, 'error': str(e)})
+                raise ExtractError(f"Lỗi lấy dữ liệu: {str(e)}", {'url': endpoint_url, 'error': str(e)})
 
         try:
             aweme_type = data.get("aweme_type")
@@ -195,37 +179,12 @@ class TikTok:
 
 
 class Params(BaseModel):
-    itemId: str
-    WebIdLastTime: str = str(utils.get_timestamp("sec"))
-    aid: str = "1988"
-    app_language: str = "en"
-    app_name: str = "tiktok_web"
-    browser_language: str = "en-US"
-    browser_name: str = "Mozilla"
-    browser_online: str = "true"
-    browser_platform: str = "Win32"
-    browser_version: str = quote(
-        "5.0 (Windows)",
-        safe="",
-    )
-    channel: str = "tiktok_web"
-    cookie_enabled: str = "true"
-    device_id: int = 7380187414842836523
-    odinId: int = 7404669909585003563
-    device_platform: str = "web_pc"
-    focus_state: str = "true"
-    from_page: str = "user"
-    history_len: int = 4
-    is_fullscreen: str = "false"
-    is_page_visible: str = "true"
-    language: str = "en"
-    os: str = "windows"
-    priority_region: str = "US"
-    referer: str = ""
-    region: str = "US"
-    root_referer: str = quote("https://www.tiktok.com/", safe="")
-    screen_height: int = 1080
-    screen_width: int = 1920
-    webcast_language: str = "en"
-    tz_name: str = quote("America/Tijuana", safe="")
-    msToken: str = utils.gen_token_domain("tiktok")
+    aweme_id: str
+    iid: int = 7318518857994389254
+    device_id: int = 7318517321748022790
+    channel: str = "googleplay"
+    app_name: str = "musical_ly"
+    version_code: str = "300904"
+    device_platform: str = "android"
+    device_type: str = "SM-ASUS_Z01QD"
+    os_version: str = "9"

@@ -5,6 +5,8 @@ import datetime
 import httpx
 
 from config.config import Config
+from urllib.parse import urlencode
+from pydantic import BaseModel
 
 domain_msToken_len = {
     "douyin": 126,
@@ -38,10 +40,23 @@ class utils:
         return URL_TYPE_CODE_DICT.get(aweme_type, 'video')
 
     @staticmethod
+    def model_to_query_string(model: BaseModel) -> str:
+        model_dict = model.dict()
+        # 使用urlencode进行URL编码
+        query_string = urlencode(model_dict)
+        return query_string
+
+    @staticmethod
     def gen_token_domain(domain: str):
         try:
             # Đổi tên biến để tránh trùng lặp logic
-            token_conf = Config().config[domain]["msToken"]
+            domain_cfg = Config().config[domain]
+            token_conf = domain_cfg["msToken"]
+            proxies_conf = domain_cfg.get("proxies", None)
+            _proxies = {
+                "http://": proxies_conf.get("http", None),
+                "https://": proxies_conf.get("https", None),
+            }
         except KeyError:
             raise KeyError(f"Không tìm thấy msToken trong config cho domain: {domain}")
             
@@ -63,16 +78,15 @@ class utils:
 
         transport = httpx.HTTPTransport(retries=5)
         try:
-            with httpx.Client(transport=transport, timeout=10) as client:
+            with httpx.Client(transport=transport,proxies=_proxies) as client:
                 response = client.post(
                     token_conf["url"], headers=headers, content=payload
                 )
                 response.raise_for_status()
                 
-                # Lấy cookie msToken
-                res_token = response.cookies.get("msToken")
-                if res_token:
-                    return str(res_token)
+                msToken = str(httpx.Cookies(response.cookies).get("msToken"))
+
+                return msToken
         except Exception:
             # Nếu request lỗi, thực hiện fallback tạo token ngẫu nhiên
             pass

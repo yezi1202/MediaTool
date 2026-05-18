@@ -33,7 +33,7 @@ def detect_platform(url: str) -> str:
     url_lower = url.lower()
     if "tiktok" in url_lower:
         return "TIKTOK"
-    elif "bilibili" in url_lower:
+    elif "bilibili" in url_lower or "b23.tv" in url_lower:
         return "BILIBILI"
     else:
         return "DOUYIN"
